@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar"><h1>Wouchh</h1><span class="who">Sign in</span></header>
+
+  <main class="narrow">
+    <div class="panel" id="loginPanel">
+      <h2>Sign in</h2>
+      <p class="hint">
+        The same form for a business and for Wouchh staff. Which you are is decided by the account,
+        not by the page.
+      </p>
+
+      <form id="loginForm">
+        <label for="method">Sign in with</label>
+        <select id="method">
+          <option value="mobile">Mobile number</option>
+          <option value="email">Email address</option>
+        </select>
+
+        <div id="mobileFields">
+          <label for="mobile">Mobile number</label>
+          <div class="row">
+            <input id="mobile" inputmode="numeric" autocomplete="tel" placeholder="8408994828" />
+            <select id="countryCode" style="flex: 0 0 90px">
+              <option value="IN">IN</option>
+              <option value="US">US</option>
+              <option value="GB">GB</option>
+              <option value="AE">AE</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="emailFields" hidden>
+          <label for="email">Email address</label>
+          <input id="email" type="email" autocomplete="email" placeholder="you@business.com" />
+        </div>
+
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" />
+
+        <div class="actions">
+          <button type="submit" id="submit">Sign in</button>
+        </div>
+      </form>
+
+      <div id="message"></div>
+      <p class="foot">No account yet? <a href="signup.html">Create a business account</a></p>
+    </div>
+
+    <!-- Shown only when one person belongs to more than one business. -->
+    <div class="panel" id="pickerPanel" hidden>
+      <h2>Choose a business</h2>
+      <p class="hint">Your account works for more than one. Pick the one to sign in to.</p>
+      <div id="pickerList"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/login.js"></script>
+</body>
+</html>

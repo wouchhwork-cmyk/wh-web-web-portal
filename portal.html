@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Your business · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <button class="secondary" id="signOut" style="margin-left:10px">Sign out</button>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel" id="state"><p class="hint">Loading…</p></div>
+    <div class="panel" id="permissions" hidden></div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/portal.js"></script>
+</body>
+</html>

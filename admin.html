@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Platform admin · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh · Platform admin</h1>
+    <span class="who">
+      <span id="who"></span>
+      <button class="secondary" id="signOut" style="margin-left:10px">Sign out</button>
+    </span>
+  </header>
+
+  <main>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="panel">
+      <h2>Businesses</h2>
+      <p class="hint">
+        Every business on the platform, newest first. A business signs up in
+        <strong>pending activation</strong> and cannot use the portal until it is activated here.
+      </p>
+
+      <div class="row">
+        <div>
+          <label for="search">Search</label>
+          <input id="search" placeholder="name, slug or email" />
+        </div>
+        <div>
+          <label for="status">Status</label>
+          <select id="status">
+            <option value="">All</option>
+            <option value="pending_activation">Pending activation</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+          </select>
+        </div>
+        <div style="flex:0 0 auto">
+          <button id="apply">Apply</button>
+        </div>
+      </div>
+
+      <table style="margin-top:16px">
+        <thead>
+          <tr>
+            <th>Business</th><th>Status</th><th>Members</th><th>Channels</th>
+            <th>Customers</th><th>Conversations</th><th>Features</th><th>Signed up</th>
+          </tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="8">Loading…</td></tr></tbody>
+      </table>
+
+      <div class="actions">
+        <button class="secondary" id="more" hidden>Load more</button>
+      </div>
+      <div id="listMessage"></div>
+    </div>
+
+    <div class="panel" id="detail" hidden></div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/admin.js"></script>
+</body>
+</html>

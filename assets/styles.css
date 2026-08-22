@@ -1,0 +1,128 @@
+/*
+ * Deliberately plain.
+ *
+ * The point of this portal right now is to prove the API flows work, so the
+ * styling is the minimum that keeps a form readable. It will be replaced whole
+ * once the flows are settled — nothing here is meant to survive.
+ */
+:root {
+  --ink: #1c1d21;
+  --muted: #6b7280;
+  --line: #e2e5ea;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --accent: #1f6feb;
+  --ok: #12805c;
+  --warn: #a1600b;
+  --bad: #b42318;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+header.bar {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+header.bar h1 { font-size: 16px; margin: 0; }
+header.bar .who { color: var(--muted); font-size: 13px; }
+
+main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }
+main.narrow { max-width: 440px; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 18px;
+}
+
+h2 { font-size: 17px; margin: 0 0 4px; }
+p.hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+
+label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+
+input, select, textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+}
+
+input:focus, select:focus { outline: 2px solid #cfe0ff; border-color: var(--accent); }
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 9px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button.secondary { background: #fff; color: var(--ink); border-color: var(--line); }
+button.danger { background: #fff; color: var(--bad); border-color: #f1c2be; }
+button:disabled { opacity: 0.55; cursor: default; }
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.row > * { flex: 1 1 160px; }
+.actions { margin-top: 18px; display: flex; gap: 10px; align-items: center; }
+
+.message { margin-top: 14px; padding: 10px 12px; border-radius: 6px; font-size: 14px; }
+.message.error { background: #fdeceb; color: var(--bad); }
+.message.ok { background: #e7f6f0; color: var(--ok); }
+.message.info { background: #eef3fb; color: #1a4d8f; }
+.message .code { display: block; font-size: 12px; opacity: 0.75; margin-top: 3px; }
+
+a { color: var(--accent); }
+.foot { text-align: center; font-size: 13px; margin-top: 14px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: #fafbfc; }
+
+.pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; border: 1px solid transparent;
+}
+.pill.active { background: #e7f6f0; color: var(--ok); }
+.pill.pending_activation { background: #fdf3e4; color: var(--warn); }
+.pill.suspended { background: #fdeceb; color: var(--bad); }
+.pill.declined, .pill.revoked { background: #fdeceb; color: var(--bad); }
+.pill.disabled, .pill.expired { background: #eef0f3; color: var(--muted); }
+.pill.access_requested { background: #eef3fb; color: #1a4d8f; }
+.pill.none { background: #eef0f3; color: var(--muted); }
+
+.tiles { display: flex; gap: 12px; flex-wrap: wrap; }
+.tile {
+  flex: 1 1 130px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 14px;
+}
+.tile .n { font-size: 24px; font-weight: 700; }
+.tile .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.kv { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+
+.feature { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.feature .name { flex: 1; }
+.feature .name small { display: block; color: var(--muted); font-weight: 400; }

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Enter your code · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar"><h1>Wouchh</h1><span class="who">Verify</span></header>
+
+  <main class="narrow">
+    <div class="panel">
+      <h2>Enter your code</h2>
+      <p class="hint" id="sentTo">Checking…</p>
+
+      <form id="verifyForm">
+        <label for="code">Verification code</label>
+        <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required />
+
+        <div class="actions">
+          <button type="submit" id="submit">Verify</button>
+          <a href="index.html">Start over</a>
+        </div>
+      </form>
+
+      <div id="message"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/verify.js"></script>
+</body>
+</html>
