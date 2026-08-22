@@ -77,10 +77,29 @@
     box.textContent = 'Your account is active.';
     state.appendChild(box);
 
-    // Only shown once the business is active: every link behind it is a
-    // tenant-scoped route that would 403 before that.
+    /*
+     * Only shown once the business is active — every link behind this is a
+     * tenant-scoped route that would 403 before that — and each link only when
+     * the person can actually use it. Offering a screen that answers 403 is
+     * worse than not offering it.
+     */
     const links = document.getElementById('links');
     if (links) links.hidden = false;
+
+    const canSee = {
+      linkTeam: me.permissions.indexOf('employees.view') !== -1,
+      linkConnections: me.permissions.indexOf('channels.view') !== -1,
+    };
+    let shown = 0;
+    Object.keys(canSee).forEach(function (id) {
+      const link = document.getElementById(id);
+      if (link && canSee[id]) {
+        link.hidden = false;
+        shown += 1;
+      }
+    });
+    const empty = document.getElementById('noLinks');
+    if (empty && shown === 0) empty.hidden = false;
 
     state.appendChild(
       paragraph(

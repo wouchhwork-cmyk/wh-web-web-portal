@@ -110,6 +110,15 @@ tbody tr:hover { background: #fafbfc; }
 .pill.disabled, .pill.expired { background: #eef0f3; color: var(--muted); }
 .pill.access_requested { background: #eef3fb; color: #1a4d8f; }
 .pill.none { background: #eef0f3; color: var(--muted); }
+/* Channel and connection statuses. `error` and `disconnected` rendered as bare
+   transparent badges before these existed, which read as "fine". */
+.pill.error, .pill.disconnected { background: #fdeceb; color: var(--bad); }
+.pill.expiring_soon { background: #fdf3e4; color: var(--warn); }
+.pill.not_applicable { background: #eef0f3; color: var(--muted); }
+.pill.invited { background: #eef3fb; color: #1a4d8f; }
+
+/* The links panel: without this two anchors sit run-together on one line. */
+#links a { display: inline-block; margin-right: 16px; }
 
 .tiles { display: flex; gap: 12px; flex-wrap: wrap; }
 .tile {
