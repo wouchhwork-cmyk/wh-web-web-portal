@@ -44,16 +44,45 @@
     return Number.isNaN(date.getTime()) ? 'no publish date' : date.toLocaleDateString();
   }
 
+  function thumbnail(post) {
+    if (!post.media || !post.media.url) return null;
+
+    const image = document.createElement('img');
+    image.src = post.media.url;
+    image.alt = '';
+    image.loading = 'lazy';
+    image.width = 56;
+    image.height = 56;
+    image.style.cssText = 'width:56px;height:56px;object-fit:cover;border-radius:6px;margin-right:10px';
+
+    /*
+     * An Instagram media url is signed and EXPIRES, so a broken thumbnail is
+     * expected rather than exceptional. Hide it instead of showing a broken
+     * image icon — the permalink is the durable way to the post.
+     */
+    image.addEventListener('error', function () {
+      image.remove();
+    });
+    return image;
+  }
+
   function rowFor(post) {
     const row = document.createElement('div');
     row.className = 'row';
 
     const left = document.createElement('div');
+    left.style.display = 'flex';
+    left.style.alignItems = 'flex-start';
+
+    const preview = thumbnail(post);
+    if (preview) left.appendChild(preview);
+
+    const text = document.createElement('div');
     const caption = document.createElement('div');
-    // The caption is the business's own text, but set as text regardless.
-    const text = post.caption || '(no caption)';
-    caption.textContent = text.length > 160 ? text.slice(0, 160) + '…' : text;
-    left.appendChild(caption);
+    // The caption is the business's own words, but set as text regardless.
+    const body = post.caption || '(no caption)';
+    caption.textContent = body.length > 160 ? body.slice(0, 160) + '…' : body;
+    text.appendChild(caption);
 
     const meta = document.createElement('small');
     meta.className = 'hint';
@@ -61,7 +90,8 @@
       post.platform + ' · ' + post.postKind +
       ' · ' + when(post.publishedAt) +
       (post.channelName ? ' · ' + post.channelName : '');
-    left.appendChild(meta);
+    text.appendChild(meta);
+    left.appendChild(text);
     row.appendChild(left);
 
     const right = document.createElement('div');

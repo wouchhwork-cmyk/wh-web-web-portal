@@ -286,6 +286,122 @@
     }
   }
 
+  /* ------------------------------------------------------------------ *
+   * Live updates
+   *
+   * fetch + ReadableStream rather than EventSource, because EventSource
+   * cannot set an Authorization header — the alternatives are a token in
+   * the query string, which lands in access logs, or a one-time ticket
+   * endpoint. Streaming by hand costs a few lines and avoids both.
+   *
+   * The stream is an OPTIMISATION. A slow poll runs regardless, so a
+   * dropped connection, a hostile proxy or an old browser costs latency
+   * and nothing else.
+   * ------------------------------------------------------------------ */
+  const POLL_MS = 30000;
+  const STREAM_RETRY_BASE_MS = 2000;
+  const STREAM_RETRY_MAX_MS = 60000;
+
+  let streamAbort = null;
+  let streamAttempt = 0;
+  let pollTimer = null;
+
+  function onInboxChanged(change) {
+    // Refresh the list, and the open thread when it is the one that moved.
+    load(true);
+    if (openRefId && change && change.conversationRefId === openRefId) {
+      openThread(openRefId);
+    }
+  }
+
+  /** Parses the SSE frames out of a byte stream. */
+  async function consume(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return;
+      buffer += decoder.decode(chunk.value, { stream: true });
+
+      // Frames are separated by a blank line; anything after the last one is
+      // a partial frame and stays in the buffer.
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+
+      frames.forEach(function (frame) {
+        let event = 'message';
+        let data = '';
+        frame.split('\n').forEach(function (line) {
+          if (line.indexOf('event:') === 0) event = line.slice(6).trim();
+          else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+          // A line starting with ':' is a heartbeat comment: ignored, but it
+          // kept the connection open, which was its whole job.
+        });
+
+        if (event !== 'inbox' || !data) return;
+        try {
+          onInboxChanged(JSON.parse(data));
+        } catch (_) { /* a malformed frame is not worth tearing the stream down */ }
+      });
+    }
+  }
+
+  async function openStream() {
+    const session = window.api.readSession();
+    if (!session || !session.accessToken) return;
+
+    streamAbort = new AbortController();
+    try {
+      const response = await fetch(window.WOUCHH_CONFIG.apiBaseUrl + '/conversations/stream', {
+        headers: { Accept: 'text/event-stream', Authorization: 'Bearer ' + session.accessToken },
+        credentials: 'include',
+        signal: streamAbort.signal,
+      });
+
+      if (!response.ok || !response.body) throw new Error('stream rejected: ' + response.status);
+
+      streamAttempt = 0;
+      await consume(response);
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;
+    }
+
+    // Ended or failed: back off and try again. The poll is still running, so
+    // nothing is lost in the meantime.
+    streamAttempt += 1;
+    const delay = Math.min(STREAM_RETRY_BASE_MS * 2 ** (streamAttempt - 1), STREAM_RETRY_MAX_MS);
+    setTimeout(function () {
+      if (!document.hidden) void openStream();
+    }, delay);
+  }
+
+  function startLiveUpdates() {
+    // The floor: even with no stream at all, the list stays roughly current.
+    pollTimer = setInterval(function () {
+      if (!document.hidden) load(true);
+    }, POLL_MS);
+
+    void openStream();
+
+    // A backgrounded tab is not worth a connection; reopening on return also
+    // catches anything missed while it was hidden.
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        if (streamAbort) streamAbort.abort();
+        return;
+      }
+      load(true);
+      void openStream();
+    });
+
+    window.addEventListener('beforeunload', function () {
+      if (pollTimer) clearInterval(pollTimer);
+      if (streamAbort) streamAbort.abort();
+    });
+  }
+
   async function start() {
     try {
       const me = (await window.api.request('/auth/me')).data;
@@ -312,6 +428,7 @@
     document.getElementById('sendReply').addEventListener('click', sendReply);
 
     load(true);
+    startLiveUpdates();
   }
 
   start();
