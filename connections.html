@@ -24,8 +24,8 @@
     <div class="panel" id="connectPanel">
       <h2>Connect Facebook &amp; Instagram</h2>
       <p class="hint">
-        You will be taken to Facebook to choose which Pages to connect. Instagram business
-        accounts attached to those Pages are picked up automatically.
+        You will be taken to the platform to choose which accounts to connect. For Facebook, any
+        Instagram business account attached to a chosen Page is picked up automatically.
       </p>
 
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400">
@@ -36,9 +36,9 @@
         </span>
       </label>
 
-      <div class="actions">
-        <button id="connect" disabled>Continue to Facebook</button>
-      </div>
+      <!-- Filled from GET /connections/providers: nothing here names a platform,
+           so adding one is a backend change only. -->
+      <div class="actions" id="providerButtons"></div>
       <div id="connectMessage"></div>
     </div>
 

@@ -5,7 +5,6 @@
   const connectMessage = document.getElementById('connectMessage');
   const listMessage = document.getElementById('listMessage');
   const consent = document.getElementById('consent');
-  const connect = document.getElementById('connect');
 
   let permissions = [];
 
@@ -200,24 +199,64 @@
   }
 
   consent.addEventListener('change', function () {
-    connect.disabled = !consent.checked;
+    document.querySelectorAll('#providerButtons button').forEach(function (button) {
+      button.disabled = !consent.checked;
+    });
   });
 
-  connect.addEventListener('click', async function () {
-    if (connect.disabled) return;
-    const original = connect.textContent;
-    connect.disabled = true;
-    connect.textContent = 'Taking you to Facebook…';
+  /*
+   * One button per platform the API says it can connect.
+   *
+   * Nothing here hardcodes "Facebook": adding a platform is a backend change and
+   * this screen picks it up. The label comes from the connector, so one button
+   * covers Facebook and Instagram together — which is the truth, since Instagram
+   * is reached through its parent Page.
+   */
+  async function loadProviders() {
+    const container = document.getElementById('providerButtons');
+    try {
+      const providers = (await window.api.request('/connections/providers')).data;
+      container.innerHTML = '';
+
+      if (providers.length === 0) {
+        show(connectMessage, 'info', 'No platforms are available to connect on this environment.');
+        return;
+      }
+
+      providers.forEach(function (entry) {
+        const button = document.createElement('button');
+        button.textContent = 'Connect ' + entry.label;
+        button.disabled = !consent.checked;
+        button.style.marginRight = '10px';
+        button.addEventListener('click', function () { startConnection(entry, button); });
+        container.appendChild(button);
+      });
+    } catch (error) {
+      container.innerHTML = '';
+      handle(error, connectMessage);
+    }
+  }
+
+  async function startConnection(entry, button) {
+    if (button.disabled) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Taking you to ' + entry.label + '…';
     connectMessage.innerHTML = '';
 
     try {
       /*
        * The backend builds the authorization URL, and it is the only thing that
-       * can: the `state` parameter is signed and recorded server-side, bound to
-       * this business and the person clicking. Nothing here chooses an identity,
+       * can: the `state` is signed and recorded server-side, bound to this
+       * business and the person clicking. Nothing here chooses an identity,
        * which is exactly why there is no key for the frontend to hold.
+       *
+       * POST, not GET, because this WRITES that state.
        */
-      const result = await window.api.request('/connections/meta/connect');
+      const result = await window.api.request('/connections/start', {
+        method: 'POST',
+        body: { provider: entry.provider },
+      });
 
       /*
        * SAME TAB, not a popup.
@@ -230,24 +269,26 @@
        */
       window.location.href = result.data.authorizationUrl;
     } catch (error) {
-      connect.disabled = false;
-      connect.textContent = original;
-      consent.checked = false;
-      connect.disabled = true;
+      button.disabled = false;
+      button.textContent = original;
 
       if (error.code === 'META_NOT_CONFIGURED') {
         show(
           connectMessage,
           'info',
-          'Facebook is not configured on this environment yet, so the connection cannot be ' +
-            'started. This is a server setting, not something wrong with your account.',
+          entry.label + ' is not configured on this environment yet, so the connection cannot ' +
+            'be started. This is a server setting, not something wrong with your account.',
           error.code,
         );
         return;
       }
+      if (error.code === 'PROVIDER_NOT_SUPPORTED') {
+        show(connectMessage, 'info', entry.label + ' cannot be connected yet.', error.code);
+        return;
+      }
       handle(error, connectMessage);
     }
-  });
+  }
 
   document.getElementById('signOut').addEventListener('click', async function () {
     try { await window.api.request('/auth/logout', { method: 'POST' }); } catch (_) { /* leaving anyway */ }
@@ -257,6 +298,6 @@
 
   reportCallbackOutcome();
   loadHeader().then(function () {
-    return Promise.all([loadConnections(), loadChannels()]);
+    return Promise.all([loadProviders(), loadConnections(), loadChannels()]);
   });
 })();
