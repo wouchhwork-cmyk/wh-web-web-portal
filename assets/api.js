@@ -50,6 +50,58 @@
     sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
   }
 
+  /**
+   * An access token lives fifteen minutes; a person's tab does not.
+   *
+   * SINGLE-FLIGHT, deliberately: a page that fires four requests at once gets
+   * four 401s, and four parallel refreshes would be four sessions' worth of work
+   * to reach the same token. Everyone waits on the first one.
+   *
+   * The refresh cookie is NOT rotated by the API (auth.service.ts §refresh), so
+   * a retry after a failed refresh is safe — there is no burnt token to lose.
+   */
+  let refreshInFlight = null;
+
+  function currentEnterpriseRefId() {
+    const session = readSession();
+    if (!session) return null;
+    // Written by routeToHome(); falls back to the /auth/me payload it stored.
+    if (session.enterpriseRefId) return session.enterpriseRefId;
+    if (session.me && session.me.enterprise) return session.me.enterprise.refId;
+    return null;
+  }
+
+  function attemptRefresh() {
+    if (refreshInFlight) return refreshInFlight;
+
+    refreshInFlight = (async function () {
+      try {
+        // WITHOUT enterpriseRefId the API issues an UNSCOPED token: refresh()
+        // only resolves employment when the query names an enterprise, so an
+        // employee would come back with enterpriseId null and 403 on every
+        // scoped route. Staff with no business selected pass null correctly.
+        const enterpriseRefId = currentEnterpriseRefId();
+        const query = enterpriseRefId
+          ? '?enterpriseRefId=' + encodeURIComponent(enterpriseRefId)
+          : '';
+        const result = await request('/auth/refresh' + query, {
+          method: 'POST',
+          skipRefresh: true,
+        });
+        writeSession(
+          Object.assign({}, readSession(), { accessToken: result.data.accessToken }),
+        );
+        return true;
+      } catch (_) {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+
+    return refreshInFlight;
+  }
+
   async function request(path, options) {
     const opts = options || {};
     const session = readSession();
@@ -84,6 +136,28 @@
 
     if (!response.ok) {
       const error = (payload && payload.error) || {};
+
+      // ONLY an expired access token is retryable. A revoked session or a
+      // permission denial must surface as itself — retrying those would loop.
+      const retryable =
+        response.status === 401 &&
+        error.code === 'AUTH_TOKEN_EXPIRED' &&
+        !opts.skipRefresh &&
+        !opts.retried;
+
+      if (retryable) {
+        const refreshed = await attemptRefresh();
+        if (refreshed) {
+          return request(path, Object.assign({}, opts, { retried: true }));
+        }
+        // The refresh token is gone or revoked too: this session is over.
+        // Send them to sign in rather than leaving a page of dead errors.
+        clearSession();
+        if (!/(^|\/)index\.html$/.test(window.location.pathname)) {
+          window.location.href = 'index.html';
+        }
+      }
+
       throw new ApiError(
         error.message || 'Request failed.',
         error.code || 'UNKNOWN',
@@ -103,7 +177,14 @@
    */
   async function routeToHome() {
     const me = (await request('/auth/me')).data;
-    writeSession(Object.assign({}, readSession(), { me: me }));
+    // enterpriseRefId is stored flat because refresh needs it on every
+    // retry, including before any page has re-read /auth/me.
+    writeSession(
+      Object.assign({}, readSession(), {
+        me: me,
+        enterpriseRefId: me.enterprise ? me.enterprise.refId : null,
+      }),
+    );
     window.location.href = me.isPlatformAdmin ? 'admin.html' : 'portal.html';
   }
 
