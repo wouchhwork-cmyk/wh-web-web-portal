@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connected accounts · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:12px">Back</a>
+      <button class="secondary" id="signOut" style="margin-left:10px">Sign out</button>
+    </span>
+  </header>
+
+  <main>
+    <!-- Whatever the OAuth callback put in the query string. Shown first, then
+         replaced by what the API actually says. -->
+    <div id="outcome"></div>
+
+    <div class="panel" id="connectPanel">
+      <h2>Connect Facebook &amp; Instagram</h2>
+      <p class="hint">
+        You will be taken to Facebook to choose which Pages to connect. Instagram business
+        accounts attached to those Pages are picked up automatically.
+      </p>
+
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400">
+        <input type="checkbox" id="consent" style="width:auto;margin-top:3px" />
+        <span>
+          I am authorised to connect these accounts on behalf of this business, and I agree to
+          Wouchh's terms and privacy policy.
+        </span>
+      </label>
+
+      <div class="actions">
+        <button id="connect" disabled>Continue to Facebook</button>
+      </div>
+      <div id="connectMessage"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Connections</h2>
+      <p class="hint">Each authorisation a person at this business has completed.</p>
+      <table>
+        <thead>
+          <tr><th>Provider</th><th>Account</th><th>Status</th><th>Token expires</th></tr>
+        </thead>
+        <tbody id="connectionRows"><tr><td colspan="4">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Channels</h2>
+      <p class="hint">
+        The Pages and Instagram profiles we can send and receive on. An Instagram profile names
+        its parent Page, because the Page's token is what authorises Instagram calls.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Platform</th><th>Kind</th><th>Parent</th><th>Status</th></tr>
+        </thead>
+        <tbody id="channelRows"><tr><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+      <div id="listMessage"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/connections.js"></script>
+</body>
+</html>
