@@ -52,18 +52,42 @@
     const name = document.createElement('strong');
     /*
      * A blank name is normal, not a bug: a direct message carries only a
-     * platform user id, so a customer first seen that way has no name until they
-     * comment, where the handle is included.
+     * platform user id, so a customer first seen that way has no name until the
+     * thread's participants are read.
      */
     name.textContent = customer.displayName || 'Unnamed customer';
     left.appendChild(name);
+
+    /*
+     * The handle is shown only when it ADDS something. For an Instagram customer
+     * the display name usually IS the handle, and printing
+     * "testrestaurant_sd @testrestaurant_sd" is noise.
+     */
+    if (customer.handle && customer.handle !== customer.displayName) {
+      const handle = document.createElement('span');
+      handle.className = 'hint';
+      handle.style.marginLeft = '8px';
+      handle.textContent = '@' + customer.handle;
+      left.appendChild(handle);
+    }
+
     left.appendChild(document.createElement('br'));
 
     const meta = document.createElement('small');
     meta.className = 'hint';
-    meta.textContent =
-      (customer.firstSource ? 'first seen via ' + customer.firstSource.replace(/_/g, ' ') : 'source unknown') +
-      ' · last seen ' + when(customer.lastSeenAt);
+    // The split name is shown only when it tells you something the display name
+    // does not — a handle has no first name, and saying so would be noise.
+    const parts = [];
+    if (customer.firstName) {
+      parts.push([customer.firstName, customer.lastName].filter(Boolean).join(' '));
+    }
+    parts.push(
+      customer.firstSource
+        ? 'first seen via ' + customer.firstSource.replace(/_/g, ' ')
+        : 'source unknown',
+    );
+    parts.push('last seen ' + when(customer.lastSeenAt));
+    meta.textContent = parts.join(' · ');
     left.appendChild(meta);
     row.appendChild(left);
 
