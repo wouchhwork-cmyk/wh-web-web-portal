@@ -50,6 +50,22 @@ const server = http.createServer((request, response) => {
   });
 });
 
+// The commonest failure here is a previous run still holding the port. Left
+// unhandled it becomes an 'error' event and fifteen lines of Node internals.
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(
+      `\nPort ${PORT} is already in use — something else is listening on it.\n` +
+        `Find it with:  lsof -nP -iTCP:${PORT} -sTCP:LISTEN\n` +
+        `Or use another port with:  PORT=5174 node server.js\n` +
+        `(if you change it, add that origin to the API's CORS_ORIGINS too)\n`,
+    );
+    process.exit(1);
+  }
+  console.error(error);
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`Wouchh portal on http://localhost:${PORT}`);
 });
