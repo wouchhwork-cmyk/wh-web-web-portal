@@ -45,7 +45,7 @@ The port matters: `5173` must appear in the API's `CORS_ORIGINS`.
 
 **As the platform admin:** the credential in the API's `PLATFORM_ADMIN_*`
 environment variables. In development that is mobile `8408994828` with password
-`1234`. There is no staff signup page and there never will be — a self-service
+`1234567890`. There is no staff signup page and there never will be — a self-service
 route to a staff account would be the worst hole in the product, so internal
 accounts are provisioned from the deployment environment only.
 
