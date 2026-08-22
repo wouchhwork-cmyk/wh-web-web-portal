@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Posts · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:10px">Back</a>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel">
+      <h2>Posts</h2>
+      <p class="hint">
+        Everything published by your connected accounts, newest first. A post with no publish time
+        from the platform sorts last.
+      </p>
+      <div class="actions">
+        <label for="channelFilter" class="hint">Account</label>
+        <select id="channelFilter"><option value="">All accounts</option></select>
+      </div>
+      <div id="listMessage"></div>
+    </div>
+
+    <div class="panel">
+      <div id="rows"></div>
+      <div class="foot">
+        <button class="secondary" id="loadMore" hidden>Load more</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/posts.js"></script>
+</body>
+</html>

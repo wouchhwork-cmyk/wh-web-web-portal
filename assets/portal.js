@@ -87,6 +87,9 @@
     if (links) links.hidden = false;
 
     const canSee = {
+      linkInbox: me.permissions.indexOf('conversations.view') !== -1,
+      linkPosts: me.permissions.indexOf('posts.view') !== -1,
+      linkCustomers: me.permissions.indexOf('customers.view') !== -1,
       linkTeam: me.permissions.indexOf('employees.view') !== -1,
       linkConnections: me.permissions.indexOf('channels.view') !== -1,
     };
@@ -103,9 +106,8 @@
 
     state.appendChild(
       paragraph(
-        'Connecting Facebook and Instagram, and the shared inbox, land here next. Nothing is ' +
-          'wired to this screen yet on purpose — the sign-in, verification and activation flows ' +
-          'come first.',
+        'Each link below appears only when your roles and this business\u2019s features allow it, ' +
+          'so nothing here answers 403.',
         'hint',
       ),
     );

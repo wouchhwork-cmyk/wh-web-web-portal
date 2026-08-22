@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inbox · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:10px">Back</a>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel">
+      <h2>Inbox</h2>
+      <p class="hint">
+        Direct messages, comment threads and mentions from every connected account, newest first.
+      </p>
+      <div class="actions">
+        <label for="statusFilter" class="hint">Status</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+          <option value="open" selected>Open</option>
+          <option value="pending">Pending</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <label for="mineOnly" class="hint" style="margin-left:12px">
+          <input type="checkbox" id="mineOnly" /> Assigned to me
+        </label>
+      </div>
+      <div id="listMessage"></div>
+    </div>
+
+    <div class="panel">
+      <div id="rows"></div>
+      <div class="foot">
+        <button class="secondary" id="loadMore" hidden>Load more</button>
+      </div>
+    </div>
+
+    <div class="panel" id="threadPanel" hidden>
+      <h2 id="threadTitle">Conversation</h2>
+      <p class="hint" id="threadMeta"></p>
+      <div id="messages"></div>
+      <div id="replyBox" hidden>
+        <label for="replyBody">Reply</label>
+        <textarea id="replyBody" rows="3" maxlength="5000"
+                  placeholder="Type a reply…"></textarea>
+        <div class="actions">
+          <button id="sendReply">Send</button>
+          <label class="hint" style="margin-left:12px">
+            <input type="checkbox" id="internalNote" /> Internal note (never sent)
+          </label>
+        </div>
+      </div>
+      <div id="threadMessage"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/inbox.js"></script>
+</body>
+</html>
