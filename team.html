@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Your team · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:12px">Back</a>
+      <button class="secondary" id="signOut" style="margin-left:10px">Sign out</button>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel" id="invitePanel">
+      <h2>Add somebody</h2>
+      <p class="hint">
+        You create the account; they choose their own password from the code we send them. Nobody
+        can sign up into your business — this is the only way in.
+      </p>
+
+      <form id="inviteForm">
+        <div class="row">
+          <div>
+            <label for="firstName">First name</label>
+            <input id="firstName" required placeholder="Rahul" />
+          </div>
+          <div>
+            <label for="lastName">Last name (optional)</label>
+            <input id="lastName" placeholder="Nair" />
+          </div>
+          <div>
+            <label for="role">Role</label>
+            <select id="role" required></select>
+          </div>
+        </div>
+
+        <label for="contactMethod">Send the invitation by</label>
+        <select id="contactMethod">
+          <option value="email">Email</option>
+          <option value="mobile">Mobile</option>
+        </select>
+
+        <div id="emailField">
+          <label for="email">Their email address</label>
+          <input id="email" type="email" placeholder="rahul@yourbusiness.com" />
+        </div>
+
+        <div id="mobileField" hidden>
+          <label for="mobile">Their mobile number</label>
+          <div class="row">
+            <input id="mobile" inputmode="numeric" placeholder="9812345678" />
+            <select id="countryCode" style="flex:0 0 90px">
+              <option value="IN">IN</option>
+              <option value="US">US</option>
+              <option value="GB">GB</option>
+              <option value="AE">AE</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="actions"><button type="submit" id="submit">Create account</button></div>
+      </form>
+      <div id="inviteMessage"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Who works here</h2>
+      <p class="hint">
+        Contact details are masked. <label style="display:inline;font-weight:400">
+        <input type="checkbox" id="includeSupport" style="width:auto" /> also show Wouchh support
+        people assigned to this business</label>
+      </p>
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Contact</th><th>Role</th><th>Status</th><th>Last active</th><th></th></tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="6">Loading…</td></tr></tbody>
+      </table>
+      <div id="listMessage"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/team.js"></script>
+</body>
+</html>

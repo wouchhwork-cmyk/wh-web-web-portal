@@ -77,6 +77,11 @@
     box.textContent = 'Your account is active.';
     state.appendChild(box);
 
+    // Only shown once the business is active: every link behind it is a
+    // tenant-scoped route that would 403 before that.
+    const links = document.getElementById('links');
+    if (links) links.hidden = false;
+
     state.appendChild(
       paragraph(
         'Connecting Facebook and Instagram, and the shared inbox, land here next. Nothing is ' +

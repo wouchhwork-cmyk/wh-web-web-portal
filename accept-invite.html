@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Accept your invitation · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar"><h1>Wouchh</h1><span class="who">Accept your invitation</span></header>
+
+  <main class="narrow">
+    <div class="panel">
+      <h2>Accept your invitation</h2>
+      <p class="hint">
+        Somebody at your business created an account for you. Enter the code that was sent to you
+        and choose a password — nobody else will ever know it.
+      </p>
+
+      <form id="acceptForm">
+        <label for="method">You were invited by</label>
+        <select id="method">
+          <option value="email">Email address</option>
+          <option value="mobile">Mobile number</option>
+        </select>
+
+        <div id="emailFields">
+          <label for="email">Your email address</label>
+          <input id="email" type="email" autocomplete="email" />
+        </div>
+
+        <div id="mobileFields" hidden>
+          <label for="mobile">Your mobile number</label>
+          <div class="row">
+            <input id="mobile" inputmode="numeric" autocomplete="tel" />
+            <select id="countryCode" style="flex:0 0 90px">
+              <option value="IN">IN</option>
+              <option value="US">US</option>
+              <option value="GB">GB</option>
+              <option value="AE">AE</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="code">Invitation code</label>
+        <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required />
+
+        <label for="password">Choose a password</label>
+        <input id="password" type="password" minlength="10" required autocomplete="new-password" />
+        <p class="hint" style="margin-top:6px">At least 10 characters.</p>
+
+        <div class="actions">
+          <button type="submit" id="submit">Accept and sign in</button>
+        </div>
+      </form>
+
+      <div id="message"></div>
+      <p class="foot">Already set up? <a href="index.html">Sign in</a></p>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/accept-invite.js"></script>
+</body>
+</html>
