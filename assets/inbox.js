@@ -21,6 +21,7 @@
   let permissions = [];
   let cursor = null;
   let openRefId = null;
+  let openConversation = null;
 
   function show(target, kind, text, code) {
     target.innerHTML = '';
@@ -64,13 +65,22 @@
 
     const left = document.createElement('div');
     const title = document.createElement('strong');
-    title.textContent = conversation.conversationKind.replace(/_/g, ' ');
+    /*
+     * The PERSON leads, not the kind. A name is not always known — a direct
+     * message carries only a platform id until the thread's participants are
+     * read — so the kind is the fallback rather than the headline.
+     */
+    const customer = conversation.customer;
+    title.textContent =
+      (customer && customer.displayName) ||
+      (customer ? 'Unnamed customer' : conversation.conversationKind.replace(/_/g, ' '));
     left.appendChild(title);
     left.appendChild(document.createElement('br'));
     const meta = document.createElement('small');
     meta.className = 'hint';
     meta.textContent =
-      conversation.messageCount +
+      conversation.conversationKind.replace(/_/g, ' ') +
+      ' · ' + conversation.messageCount +
       ' message' + (conversation.messageCount === 1 ? '' : 's') +
       ' · last ' + when(conversation.lastMessageAt);
     left.appendChild(meta);
@@ -80,6 +90,10 @@
     right.appendChild(pill(conversation.status, conversation.status));
     if (conversation.unreadCount > 0) {
       right.appendChild(pill(conversation.unreadCount + ' unread', 'pending'));
+    }
+    // Visible in the list, so an agent picking work knows before opening it.
+    if (conversation.canReply === false) {
+      right.appendChild(pill('reply closed', 'suspended'));
     }
     const open = document.createElement('button');
     open.className = 'secondary';
@@ -164,9 +178,13 @@
       const data = result.data || {};
       const conversation = data.conversation || {};
 
-      threadTitle.textContent = (conversation.conversationKind || 'Conversation').replace(/_/g, ' ');
+      const person = conversation.customer;
+      threadTitle.textContent =
+        (person && person.displayName) ||
+        (conversation.conversationKind || 'Conversation').replace(/_/g, ' ');
       threadMeta.textContent =
-        (conversation.platform || '') +
+        (conversation.conversationKind || '').replace(/_/g, ' ') +
+        ' · ' + (conversation.platform || '') +
         ' · ' + (conversation.status || '') +
         ' · ' + (conversation.messageCount || 0) + ' messages';
 
@@ -180,8 +198,40 @@
       }
       list.forEach(function (message) { messages.appendChild(messageRow(message)); });
 
-      // Only offer a reply box when the API would accept the reply.
-      replyBox.hidden = permissions.indexOf('conversations.reply') === -1;
+      openConversation = conversation;
+
+      /*
+       * The reply box follows the API's OWN answer rather than a rule
+       * reimplemented here. `canReply` depends on when the customer last wrote,
+       * which the client cannot work out from the thread alone — and duplicating
+       * a 24-hour rule in two places is how the two drift apart.
+       */
+      const canReply = permissions.indexOf('conversations.reply') !== -1;
+      replyBox.hidden = !canReply;
+
+      const blocked = conversation.canReply === false;
+      const send = document.getElementById('sendReply');
+      const note = document.getElementById('internalNote');
+      const body = document.getElementById('replyBody');
+
+      if (canReply && blocked) {
+        // An internal note never reaches the platform, so it stays available —
+        // and becomes the only thing this box can do.
+        note.checked = true;
+        note.disabled = true;
+        body.placeholder = 'Add an internal note…';
+        send.textContent = 'Save note';
+        show(
+          threadMessage,
+          'info',
+          conversation.replyBlockedReason ||
+            'The platform will not accept a reply on this conversation right now.',
+        );
+      } else if (canReply) {
+        note.disabled = false;
+        body.placeholder = 'Type a reply…';
+        send.textContent = 'Send';
+      }
 
       // Reading a thread marks it read; failing that is not worth an error.
       try {
@@ -220,7 +270,17 @@
       show(threadMessage, 'ok', 'Queued for delivery.');
       await openThread(openRefId);
     } catch (error) {
-      handle(error, threadMessage);
+      // The window can close between opening the thread and pressing send, so
+      // this is a normal outcome rather than a fault: explain it and keep what
+      // they typed.
+      if (error.code === 'MESSAGING_WINDOW_CLOSED') {
+        show(threadMessage, 'info', error.message);
+        if (openConversation) openConversation.canReply = false;
+        document.getElementById('internalNote').checked = true;
+        document.getElementById('internalNote').disabled = true;
+      } else {
+        handle(error, threadMessage);
+      }
     } finally {
       button.disabled = false;
     }
