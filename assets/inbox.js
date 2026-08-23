@@ -190,8 +190,13 @@
     left.appendChild(body);
     const meta = document.createElement('small');
     meta.className = 'hint';
-    meta.textContent =
-      (message.direction || message.messageKind || '') + ' · ' + when(message.platformSentAt || message.createdAt);
+    // WHO sent it, where the API knows: a shared inbox needs to show which
+    // colleague answered, and the thread used to say only "outbound".
+    const parts = [message.direction || message.messageKind || ''];
+    if (message.sentBy) parts.push(message.sentBy.name || 'a colleague');
+    if (message.isInternalNote) parts.push('internal note');
+    parts.push(when(message.platformSentAt || message.createdAt));
+    meta.textContent = parts.filter(Boolean).join(' · ');
     left.appendChild(meta);
     row.appendChild(left);
 
