@@ -46,6 +46,34 @@
     <div class="panel" id="threadPanel" hidden>
       <h2 id="threadTitle">Conversation</h2>
       <p class="hint" id="threadMeta"></p>
+
+      <!--
+        Handing a conversation over and closing it. Both endpoints existed from
+        the start and nothing here called them, so every conversation stayed
+        open and unassigned forever and the "assigned to me" filter was always
+        empty — which is most of what makes a shared inbox shared.
+      -->
+      <div class="actions" id="threadControls" hidden>
+        <span class="hint" id="assignedTo"></span>
+        <span id="assignControls" hidden style="margin-left:12px">
+          <select id="assignPicker" hidden></select>
+          <button class="secondary" id="assignMe">Assign to me</button>
+          <button class="secondary" id="unassign" hidden>Unassign</button>
+        </span>
+        <span id="statusControls" hidden style="margin-left:12px">
+          <label for="statusPicker" class="hint">Status</label>
+          <select id="statusPicker">
+            <option value="open">Open</option>
+            <option value="pending">Pending</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+          </select>
+        </span>
+      </div>
+
+      <div class="foot">
+        <button class="secondary" id="loadOlder" hidden>Load older messages</button>
+      </div>
       <div id="messages"></div>
       <div id="replyBox" hidden>
         <label for="replyBody">Reply</label>

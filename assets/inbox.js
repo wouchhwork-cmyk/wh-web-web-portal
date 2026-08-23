@@ -22,6 +22,30 @@
   let cursor = null;
   let openRefId = null;
   let openConversation = null;
+  /** This agent's own employee ref, so "assign to me" has something to send. */
+  let myEmployeeRefId = null;
+  /** Colleagues, loaded once and only when this agent may see them. */
+  let team = null;
+  /** Older messages in the open thread; null once the whole thread is loaded. */
+  let threadCursor = null;
+  /*
+   * Minted per COMPOSED MESSAGE, not per attempt.
+   *
+   * It used to be `Date.now()` at send time, which meant every retry carried a
+   * NEW key — so the mechanism protected against nothing except a double click
+   * inside the same millisecond. The key is now issued once for what the agent
+   * typed and reused for every attempt at sending it, which is the only shape
+   * that makes a retry after a timeout safe.
+   */
+  let replyKey = null;
+
+  function newReplyKey() {
+    const random =
+      window.crypto && window.crypto.randomUUID
+        ? window.crypto.randomUUID()
+        : String(Date.now()) + '-' + String(Math.random()).slice(2);
+    return 'reply-' + random;
+  }
 
   function show(target, kind, text, code) {
     target.innerHTML = '';
@@ -95,6 +119,16 @@
     if (conversation.canReply === false) {
       right.appendChild(pill('reply closed', 'suspended'));
     }
+    /*
+     * WHO HAS IT. The whole point of a shared inbox: without this, two agents
+     * pick up the same conversation and the customer gets two answers.
+     */
+    if (conversation.assignedTo) {
+      const mine = conversation.assignedTo.refId === myEmployeeRefId;
+      right.appendChild(
+        pill(mine ? 'you' : conversation.assignedTo.name || 'assigned', mine ? 'active' : 'none'),
+      );
+    }
     const open = document.createElement('button');
     open.className = 'secondary';
     open.style.marginLeft = '8px';
@@ -167,16 +201,143 @@
     return row;
   }
 
-  async function openThread(refId) {
+
+  /* ------------------------------------------------------------------ *
+   * Assignment and status
+   *
+   * Both endpoints existed from the first commit and nothing ever called
+   * them, so every conversation was open and unassigned forever.
+   *
+   * "Assign to me" needs no employee list, so it works for an agent who
+   * cannot see the team. The picker appears only when this agent holds
+   * employees.view — otherwise handing work to a NAMED colleague would
+   * require a list they are not allowed to read.
+   * ------------------------------------------------------------------ */
+
+  async function loadTeam() {
+    if (team !== null) return team;
+    if (permissions.indexOf('employees.view') === -1) {
+      team = [];
+      return team;
+    }
+    try {
+      // No query: the schema is strict, and an unknown parameter is a 400.
+      const result = await window.api.request('/employees');
+      team = (result.data || []).filter(function (person) {
+        // Only somebody who can actually pick the work up.
+        return person.status === 'active';
+      });
+    } catch (_) {
+      // Not fatal: assign-to-me still works, which is the common case anyway.
+      team = [];
+    }
+    return team;
+  }
+
+  function renderThreadControls(conversation) {
+    const controls = document.getElementById('threadControls');
+    const assignedLabel = document.getElementById('assignedTo');
+    const assignWrap = document.getElementById('assignControls');
+    const statusWrap = document.getElementById('statusControls');
+    const picker = document.getElementById('assignPicker');
+    const assignMe = document.getElementById('assignMe');
+    const unassign = document.getElementById('unassign');
+    const statusPicker = document.getElementById('statusPicker');
+
+    const canAssign = permissions.indexOf('conversations.assign') !== -1;
+    const canManage = permissions.indexOf('conversations.manage') !== -1;
+
+    controls.hidden = !canAssign && !canManage;
+    assignWrap.hidden = !canAssign;
+    statusWrap.hidden = !canManage;
+
+    const holder = conversation.assignedTo;
+    const mine = holder && holder.refId === myEmployeeRefId;
+    assignedLabel.textContent = holder
+      ? mine
+        ? 'Assigned to you'
+        : 'Assigned to ' + (holder.name || 'a colleague')
+      : 'Unassigned';
+
+    assignMe.hidden = Boolean(mine) || !myEmployeeRefId;
+    unassign.hidden = !holder;
+    statusPicker.value = conversation.status || 'open';
+
+    if (canAssign) {
+      void loadTeam().then(function (people) {
+        if (people.length === 0) {
+          picker.hidden = true;
+          return;
+        }
+        picker.hidden = false;
+        picker.innerHTML = '';
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'Assign to…';
+        picker.appendChild(none);
+        people.forEach(function (person) {
+          const option = document.createElement('option');
+          option.value = person.refId;
+          // The employees list returns a single joined `name`, not parts.
+          option.textContent = person.name || 'Unnamed colleague';
+          picker.appendChild(option);
+        });
+        picker.value = holder ? holder.refId : '';
+      });
+    }
+  }
+
+  async function setAssignee(employeeRefId) {
+    if (!openRefId) return;
+    try {
+      await window.api.request('/conversations/' + encodeURIComponent(openRefId) + '/assign', {
+        method: 'POST',
+        body: { employeeRefId: employeeRefId },
+      });
+      // Re-read rather than patching local state: the API is the authority on
+      // who holds it, and a colleague may have taken it in the meantime.
+      await openThread(openRefId);
+      await load(true);
+    } catch (error) {
+      handle(error, threadMessage);
+    }
+  }
+
+  async function setStatus(status) {
+    if (!openRefId) return;
+    try {
+      await window.api.request('/conversations/' + encodeURIComponent(openRefId) + '/status', {
+        method: 'POST',
+        body: { status: status },
+      });
+      await openThread(openRefId);
+      await load(true);
+    } catch (error) {
+      handle(error, threadMessage);
+    }
+  }
+
+  async function openThread(refId, appendOlder) {
+    const older = Boolean(appendOlder);
     openRefId = refId;
     threadPanel.hidden = false;
     threadMessage.innerHTML = '';
-    messages.innerHTML = '<p class="hint">Loading…</p>';
+    if (!older) {
+      threadCursor = null;
+      messages.innerHTML = '<p class="hint">Loading…</p>';
+    }
 
     try {
-      const result = await window.api.request('/conversations/' + encodeURIComponent(refId));
+      // A long thread arrives one page at a time. Before this the endpoint had no
+      // pagination surface at all, so a conversation simply stopped at the
+      // newest fifty messages with nothing to say there were more.
+      const query = older && threadCursor ? '?cursor=' + encodeURIComponent(threadCursor) : '';
+      const result = await window.api.request(
+        '/conversations/' + encodeURIComponent(refId) + query,
+      );
       const data = result.data || {};
       const conversation = data.conversation || {};
+      const pagination = data.pagination || {};
 
       const person = conversation.customer;
       threadTitle.textContent =
@@ -188,9 +349,9 @@
         ' · ' + (conversation.status || '') +
         ' · ' + (conversation.messageCount || 0) + ' messages';
 
-      messages.innerHTML = '';
+      if (!older) messages.innerHTML = '';
       const list = data.messages || [];
-      if (list.length === 0) {
+      if (list.length === 0 && !older) {
         messages.appendChild(Object.assign(document.createElement('p'), {
           className: 'hint',
           textContent: 'No messages in this thread.',
@@ -198,7 +359,11 @@
       }
       list.forEach(function (message) { messages.appendChild(messageRow(message)); });
 
+      threadCursor = pagination.nextCursor || null;
+      document.getElementById('loadOlder').hidden = !pagination.hasMore;
+
       openConversation = conversation;
+      renderThreadControls(conversation);
 
       /*
        * The reply box follows the API's OWN answer rather than a rule
@@ -253,6 +418,9 @@
       return;
     }
 
+    // Minted here, once, and kept until this message is actually accepted.
+    if (!replyKey) replyKey = newReplyKey();
+
     const button = document.getElementById('sendReply');
     button.disabled = true;
     try {
@@ -261,12 +429,15 @@
         body: {
           body: body,
           internalNote: document.getElementById('internalNote').checked,
-          // Client-supplied so a double click cannot post twice. The API backs
-          // this with a unique index, not a cache.
-          idempotencyKey: 'reply-' + openRefId + '-' + Date.now(),
+          // The SAME key for every attempt at this message, so a retry after a
+          // timeout returns the original rather than sending a second copy.
+          idempotencyKey: replyKey,
         },
       });
       document.getElementById('replyBody').value = '';
+      // Delivered, so the next thing typed is a different message and gets its
+      // own key. Only ever reset on SUCCESS.
+      replyKey = null;
       show(threadMessage, 'ok', 'Queued for delivery.');
       await openThread(openRefId);
     } catch (error) {
@@ -307,10 +478,13 @@
   let pollTimer = null;
 
   function onInboxChanged(change) {
-    // Refresh the list, and the open thread when it is the one that moved.
+    // Refresh the list, and the open thread when it is the one that moved. An
+    // 'assigned' or 'status' event is exactly the case worth reacting to: it is
+    // a COLLEAGUE's action, and seeing it late is how two people answer the
+    // same customer.
     load(true);
     if (openRefId && change && change.conversationRefId === openRefId) {
-      openThread(openRefId);
+      void openThread(openRefId);
     }
   }
 
@@ -339,6 +513,17 @@
           // A line starting with ':' is a heartbeat comment: ignored, but it
           // kept the connection open, which was its whole job.
         });
+
+        /*
+         * The server CAPS a stream's lifetime, because an open stream is an
+         * authorisation with no expiry otherwise. It says so before closing, and
+         * reconnecting immediately keeps that invisible instead of waiting out
+         * the reconnect backoff for something that is not a failure.
+         */
+        if (event === 'expired') {
+          streamAttempt = 0;
+          return;
+        }
 
         if (event !== 'inbox' || !data) return;
         try {
@@ -406,6 +591,9 @@
     try {
       const me = (await window.api.request('/auth/me')).data;
       permissions = me.permissions || [];
+      // Needed to offer "assign to me" and to render "assigned to you": the API
+      // speaks in refIds, so a client has to know its own.
+      myEmployeeRefId = me.employeeRefId || null;
       document.getElementById('who').textContent = me.enterprise ? me.enterprise.name : '';
     } catch (error) {
       handle(error, listMessage);
@@ -426,6 +614,23 @@
     document.getElementById('mineOnly').addEventListener('change', function () { load(true); });
     loadMore.addEventListener('click', function () { load(false); });
     document.getElementById('sendReply').addEventListener('click', sendReply);
+
+    document.getElementById('assignMe').addEventListener('click', function () {
+      void setAssignee(myEmployeeRefId);
+    });
+    document.getElementById('unassign').addEventListener('click', function () {
+      void setAssignee(null);
+    });
+    document.getElementById('assignPicker').addEventListener('change', function (event) {
+      const value = event.target.value;
+      void setAssignee(value || null);
+    });
+    document.getElementById('statusPicker').addEventListener('change', function (event) {
+      void setStatus(event.target.value);
+    });
+    document.getElementById('loadOlder').addEventListener('click', function () {
+      void openThread(openRefId, true);
+    });
 
     load(true);
     startLiveUpdates();

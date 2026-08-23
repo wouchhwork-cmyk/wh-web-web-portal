@@ -96,6 +96,15 @@
 
     const right = document.createElement('div');
     right.appendChild(pill(post.commentCount + ' comments', post.commentCount > 0 ? 'active' : 'none'));
+    /*
+     * Shown only when non-zero. These columns existed from the start and
+     * nothing ever wrote them — the service never asked Meta for a reaction
+     * summary — so "0 likes" on every post would be a confident lie rather than
+     * a fact. Instagram exposes no share count at all, so that stays hidden
+     * there by the same rule.
+     */
+    if (post.likeCount > 0) right.appendChild(pill(post.likeCount + ' likes', 'active'));
+    if (post.shareCount > 0) right.appendChild(pill(post.shareCount + ' shares', 'active'));
     if (post.permalinkUrl) {
       const link = document.createElement('a');
       link.href = post.permalinkUrl;
