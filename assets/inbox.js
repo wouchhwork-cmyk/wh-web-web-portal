@@ -342,7 +342,8 @@
       );
       const data = result.data || {};
       const conversation = data.conversation || {};
-      const pagination = data.pagination || {};
+      // In meta, like every other list on this API.
+      const pagination = (result.meta && result.meta.pagination) || {};
 
       const person = conversation.customer;
       threadTitle.textContent =
