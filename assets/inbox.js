@@ -346,6 +346,16 @@
     assignWrap.hidden = !canAssign;
     statusWrap.hidden = !canManage;
 
+    /*
+     * Only a message thread can be re-read from the platform, so the button is
+     * hidden rather than shown and then refused: the API answers 422 for a
+     * comment thread, and a control that only ever errors is worse than none.
+     */
+    const resyncWrap = document.getElementById('resyncControls');
+    const kind = conversation.conversationKind;
+    resyncWrap.hidden = !canManage || (kind !== 'direct_message' && kind !== 'story_reply');
+    document.getElementById('resyncNote').textContent = '';
+
     const holder = conversation.assignedTo;
     const mine = holder && holder.refId === myEmployeeRefId;
     assignedLabel.textContent = holder
@@ -710,6 +720,34 @@
     document.getElementById('mineOnly').addEventListener('change', function () { load(true); });
     loadMore.addEventListener('click', function () { load(false); });
     document.getElementById('sendReply').addEventListener('click', sendReply);
+
+    document.getElementById('resync').addEventListener('click', function () {
+      var button = this;
+      var note = document.getElementById('resyncNote');
+      if (!openRefId) return;
+      button.disabled = true;
+      note.textContent = 'asking Instagram…';
+
+      window.api
+        .request('/conversations/' + encodeURIComponent(openRefId) + '/resync', {
+          method: 'POST',
+        })
+        .then(function (result) {
+          /*
+           * queued:false is a success, not a failure: a repair for this thread
+           * is already running and a second would do the same work twice.
+           */
+          note.textContent = (result.data || {}).queued
+            ? 'checking — new messages appear here as they arrive'
+            : 'already checking';
+        })
+        .catch(function (error) {
+          note.textContent = 'could not start: ' + (error.message || 'unknown error');
+        })
+        .finally(function () {
+          button.disabled = false;
+        });
+    });
 
     document.getElementById('assignMe').addEventListener('click', function () {
       void setAssignee(myEmployeeRefId);

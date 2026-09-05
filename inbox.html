@@ -69,6 +69,14 @@
             <option value="closed">Closed</option>
           </select>
         </span>
+        <!--
+          Repairs a gap left by a webhook that never arrived. Only on message
+          threads: a comment thread has no conversations edge to re-read.
+        -->
+        <span id="resyncControls" hidden style="margin-left:12px">
+          <button class="secondary" id="resync">Re-check with Instagram</button>
+          <span class="hint" id="resyncNote"></span>
+        </span>
       </div>
 
       <div class="foot">
