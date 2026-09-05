@@ -179,6 +179,88 @@
     }
   }
 
+  /*
+   * One attachment.
+   *
+   * The URL is the PLATFORM's CDN link, used directly: Meta's terms forbid
+   * storing or caching the media on our side, so there is nothing of ours to
+   * serve. A link with `expires` dies with the content — about 24 hours for a
+   * story — so a failure to load is expected rather than broken, and says so.
+   */
+  function attachmentNode(attachment, messageKind) {
+    var wrap = document.createElement('div');
+    wrap.className = 'attachment';
+
+    if (!attachment.url) {
+      wrap.textContent = '(' + (attachment.mediaKind || 'attachment') + ', no link)';
+      return wrap;
+    }
+
+    var isStory = messageKind === 'story_reply';
+    if (isStory) {
+      var tag = document.createElement('small');
+      tag.className = 'hint';
+      tag.textContent = 'mentioned you in their story';
+      wrap.appendChild(tag);
+    }
+
+    if (attachment.mediaKind === 'video') {
+      var video = document.createElement('video');
+      video.src = attachment.url;
+      video.controls = true;
+      video.preload = 'metadata';
+      video.style.maxWidth = '260px';
+      video.style.borderRadius = '8px';
+      video.addEventListener('error', function () {
+        wrap.replaceChildren(gone(attachment));
+      });
+      wrap.appendChild(video);
+      return wrap;
+    }
+
+    if (attachment.mediaKind === 'audio') {
+      var audio = document.createElement('audio');
+      audio.src = attachment.url;
+      audio.controls = true;
+      wrap.appendChild(audio);
+      return wrap;
+    }
+
+    // image, gif, sticker — and anything unrecognised, which is far more useful
+    // rendered as a link than swallowed.
+    if (attachment.mediaKind === 'document') {
+      var link = document.createElement('a');
+      link.href = attachment.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = attachment.platformType || 'attachment';
+      wrap.appendChild(link);
+      return wrap;
+    }
+
+    var image = document.createElement('img');
+    image.src = attachment.url;
+    image.alt = isStory ? 'story mention' : attachment.mediaKind || 'attachment';
+    image.loading = 'lazy';
+    image.style.maxWidth = '220px';
+    image.style.borderRadius = '8px';
+    image.addEventListener('error', function () {
+      wrap.replaceChildren(gone(attachment));
+    });
+    wrap.appendChild(image);
+    return wrap;
+  }
+
+  /** What to show once a platform link has expired. */
+  function gone(attachment) {
+    var note = document.createElement('small');
+    note.className = 'hint';
+    note.textContent = attachment.expires
+      ? 'this ' + (attachment.mediaKind || 'attachment') + ' is no longer available on the platform'
+      : 'this ' + (attachment.mediaKind || 'attachment') + ' could not be loaded';
+    return note;
+  }
+
   function messageRow(message) {
     const row = document.createElement('div');
     row.className = 'row';
@@ -186,8 +268,16 @@
     const left = document.createElement('div');
     const body = document.createElement('div');
     // Customer words: set as text, never as HTML.
-    body.textContent = message.body || '(no text)';
+    const attachments = message.attachments || [];
+    body.textContent = message.body || (attachments.length ? '' : '(no text)');
     left.appendChild(body);
+
+    // Media, where there is any. Before this the thread showed "(no text)" for
+    // a photo, a GIF, a video or a story mention — which is every message whose
+    // whole content is the attachment.
+    attachments.forEach(function (attachment) {
+      left.appendChild(attachmentNode(attachment, message.messageKind));
+    });
     const meta = document.createElement('small');
     meta.className = 'hint';
     // WHO sent it, where the API knows: a shared inbox needs to show which
