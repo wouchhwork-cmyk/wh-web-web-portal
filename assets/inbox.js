@@ -244,7 +244,15 @@
       return wrap;
     }
 
-    if (attachment.mediaKind === 'audio') {
+    /*
+     * The API says whether this can be SHOWN or only linked. Deriving it from
+     * the media kind here was guesswork that got shares wrong: a shared reel is
+     * a video whose link is an instagram.com page, not a file a <video> can
+     * play.
+     */
+    var renderAs = attachment.renderAs || attachment.mediaKind;
+
+    if (renderAs === 'audio') {
       var audio = document.createElement('audio');
       audio.src = attachment.url;
       audio.controls = true;
@@ -252,7 +260,7 @@
       return wrap;
     }
 
-    if (attachment.mediaKind === 'document') {
+    if (renderAs === 'link') {
       /*
        * A SHARED REEL CANNOT BE SHOWN, only linked. Instagram serves its embed
        * page with x-frame-options: DENY, the oEmbed API that returns a
@@ -322,12 +330,28 @@
       return wrap;
     }
 
-    if (attachment.mediaKind === 'video') {
+    if (renderAs === 'video') {
       slot.appendChild(videoNode(attachment, slot));
       return wrap;
     }
 
     // image, gif, sticker — and a story mention, which may be either.
+    /*
+     * A SHARED POST's caption. For a shared advert the caption is most of the
+     * message — without it the thread shows a picture and no hint of what was
+     * sent or why.
+     */
+    if (attachment.title) {
+      var caption = document.createElement('small');
+      caption.className = 'hint';
+      caption.style.display = 'block';
+      caption.style.whiteSpace = 'pre-wrap';
+      caption.style.maxWidth = '320px';
+      caption.textContent =
+        attachment.title.length > 220 ? attachment.title.slice(0, 220) + '…' : attachment.title;
+      slot.appendChild(caption);
+    }
+
     var image = document.createElement('img');
     image.src = attachment.url;
     image.alt = isStory ? 'story mention' : attachment.mediaKind || 'attachment';
@@ -336,15 +360,15 @@
     image.style.borderRadius = '8px';
     image.addEventListener('error', function () {
       /*
-       * A story mention that will not load as a picture is very often a VIDEO
-       * story. Try that before giving up — the alternative is telling somebody
-       * their story vanished when it is playing fine.
+       * ANY of these links may turn out to be a video. Meta gives no mime type
+       * for a story mention, a shared story or a shared post — all three arrive
+       * as a CDN link that is a photo or a video, and only trying tells you
+       * which. Reporting "no longer available" for a video that plays perfectly
+       * was the first version of this.
+       *
+       * Tried once: the video's own error handler shows the placeholder.
        */
-      if (isStory) {
-        slot.replaceChildren(videoNode(attachment, slot));
-        return;
-      }
-      slot.replaceChildren(gone(attachment));
+      slot.replaceChildren(videoNode(attachment, slot));
     });
     slot.appendChild(image);
     return wrap;
