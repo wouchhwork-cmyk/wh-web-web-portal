@@ -443,6 +443,70 @@
       left.appendChild(quote);
     }
 
+    /*
+     * REPLYING TO A STORY, which is not the same as replying to a message.
+     *
+     * A customer taps a story and types. Nothing is being answered and there is
+     * no text to quote, so this cannot reuse the block above — it shows the
+     * story itself, which is the whole context for whatever they said.
+     *
+     * The thumbnail is Meta's CDN link and dies with the story, about 24 hours,
+     * so a failure to load is expected rather than a bug: the label survives on
+     * its own and says the story has gone.
+     */
+    if (message.repliedToStory) {
+      var storyQuote = document.createElement('div');
+      storyQuote.className = 'hint';
+      storyQuote.style.borderLeft = '3px solid currentColor';
+      storyQuote.style.paddingLeft = '8px';
+      storyQuote.style.marginBottom = '4px';
+      storyQuote.style.opacity = '0.75';
+
+      var storyWho = document.createElement('strong');
+      storyWho.style.display = 'block';
+      storyWho.textContent = 'Replying to your story';
+      storyQuote.appendChild(storyWho);
+
+      var storyUrl = message.repliedToStory.url;
+      if (storyUrl) {
+        var thumb = document.createElement('img');
+        thumb.src = storyUrl;
+        thumb.alt = 'the story they replied to';
+        thumb.style.maxHeight = '120px';
+        thumb.style.borderRadius = '6px';
+        thumb.style.display = 'block';
+        thumb.style.marginTop = '4px';
+        /*
+         * A story can be a video, and the CDN serves it under the SAME link
+         * with no type to tell them apart — the same discovery-by-trying the
+         * attachment renderer already does. A story that has expired fails
+         * both ways, and then it says so.
+         */
+        thumb.onerror = function () {
+          var video = document.createElement('video');
+          video.src = storyUrl;
+          video.controls = true;
+          video.style.maxHeight = '120px';
+          video.style.borderRadius = '6px';
+          video.style.display = 'block';
+          video.style.marginTop = '4px';
+          video.onerror = function () {
+            var gone = document.createElement('span');
+            gone.textContent = 'this story has expired';
+            storyQuote.replaceChild(gone, video);
+          };
+          storyQuote.replaceChild(video, thumb);
+        };
+        storyQuote.appendChild(thumb);
+      } else {
+        var noLink = document.createElement('span');
+        noLink.textContent = 'the story is no longer available';
+        storyQuote.appendChild(noLink);
+      }
+
+      left.appendChild(storyQuote);
+    }
+
     const body = document.createElement('div');
     // Customer words: set as text, never as HTML.
     const attachments = message.attachments || [];
@@ -616,6 +680,159 @@
     return team;
   }
 
+  /**
+   * THE POST SOMEBODY TAGGED US UNDER.
+   *
+   * A mention is a comment on a stranger's post, and without this the thread is
+   * one line of text with no hint of what it is about — an agent cannot answer
+   * "do you feel same ???" without seeing the post it was said under.
+   *
+   * Everything here is drawn ONLY if the platform gave it. Meta omits fields it
+   * will not answer rather than erroring, so a missing like count means "we
+   * were refused", and showing 0 would be inventing a fact.
+   */
+  function renderMentionContext(conversation) {
+    var existing = document.getElementById('mentionContext');
+    if (existing) existing.remove();
+
+    var context = conversation.mentionContext;
+    if (!context) return;
+
+    var card = document.createElement('div');
+    card.id = 'mentionContext';
+    card.className = 'attachment';
+    card.style.marginBottom = '12px';
+
+    var heading = document.createElement('strong');
+    heading.style.display = 'block';
+    heading.textContent = context.ownerUsername
+      ? 'Tagged under @' + context.ownerUsername + "'s post"
+      : 'Tagged under a post';
+    card.appendChild(heading);
+
+    if (context.mediaUrl) {
+      var img = document.createElement('img');
+      img.src = context.mediaUrl;
+      img.alt = 'the post they tagged you under';
+      img.style.maxHeight = '160px';
+      img.style.borderRadius = '6px';
+      img.style.display = 'block';
+      img.style.margin = '6px 0';
+      // A reel's media_url is a video file, and the CDN gives no type up front.
+      img.onerror = function () {
+        var video = document.createElement('video');
+        video.src = context.mediaUrl;
+        video.controls = true;
+        video.style.maxHeight = '160px';
+        video.style.borderRadius = '6px';
+        video.style.display = 'block';
+        video.style.margin = '6px 0';
+        card.replaceChild(video, img);
+      };
+      card.appendChild(img);
+    }
+
+    if (context.caption) {
+      var caption = document.createElement('div');
+      caption.className = 'hint';
+      caption.style.whiteSpace = 'pre-wrap';
+      caption.style.margin = '4px 0';
+      // Somebody else's words: set as text, never as HTML.
+      caption.textContent = context.caption;
+      card.appendChild(caption);
+    }
+
+    /*
+     * COUNTS THE PLATFORM ACTUALLY GAVE US.
+     *
+     * shareCount is always null — Instagram exposes no share or save count for
+     * a post we do not own, and there is no field to ask for. It is therefore
+     * left out entirely rather than shown as a zero or a dash, which would both
+     * read as "nobody shared this".
+     */
+    var facts = [];
+    if (typeof context.likeCount === 'number') {
+      facts.push(context.likeCount.toLocaleString() + ' likes');
+    }
+    if (typeof context.commentCount === 'number') {
+      facts.push(context.commentCount.toLocaleString() + ' comments');
+    }
+    if (context.mediaType) facts.push(context.mediaType.toLowerCase());
+    if (context.postedAt) facts.push('posted ' + when(context.postedAt));
+    if (facts.length) {
+      var stats = document.createElement('small');
+      stats.className = 'hint';
+      stats.style.display = 'block';
+      stats.textContent = facts.join(' · ');
+      card.appendChild(stats);
+    }
+
+    if (context.permalink) {
+      var link = document.createElement('a');
+      link.href = context.permalink;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.style.display = 'block';
+      link.style.marginTop = '4px';
+      link.textContent = 'Open on Instagram ↗';
+      card.appendChild(link);
+    }
+
+    /*
+     * THE REPLIES UNDER OUR MENTION — a snapshot, and deliberately labelled as
+     * one. Meta sends no webhook when somebody replies to a mention, so this is
+     * the thread as it stood when we read it and it does not update itself.
+     *
+     * Every reply is anonymous: the platform omits the author on all of them.
+     * Some carry no text either, which is what a media-only reply looks like
+     * from here — so it is shown as a real reply we simply cannot read.
+     */
+    var replies = context.replies || [];
+    if (replies.length) {
+      var thread = document.createElement('div');
+      thread.style.marginTop = '8px';
+      thread.style.borderTop = '1px solid currentColor';
+      thread.style.paddingTop = '6px';
+
+      var threadHead = document.createElement('small');
+      threadHead.className = 'hint';
+      threadHead.style.display = 'block';
+      threadHead.textContent =
+        replies.length + (replies.length === 1 ? ' reply' : ' replies') +
+        ' under your mention · when we last looked';
+      thread.appendChild(threadHead);
+
+      replies.forEach(function (reply) {
+        var row = document.createElement('div');
+        row.style.margin = '4px 0 0 8px';
+
+        var who = document.createElement('small');
+        who.className = 'hint';
+        who.style.display = 'block';
+        // Never available — say so plainly rather than leaving a blank.
+        who.textContent =
+          'someone (Instagram does not tell us who)' +
+          (reply.postedAt ? ' · ' + when(reply.postedAt) : '');
+        row.appendChild(who);
+
+        var text = document.createElement('div');
+        if (reply.text) {
+          text.textContent = reply.text;
+        } else {
+          text.className = 'hint';
+          text.style.fontStyle = 'italic';
+          text.textContent = 'a reply we cannot read — Instagram withheld it';
+        }
+        row.appendChild(text);
+        thread.appendChild(row);
+      });
+
+      card.appendChild(thread);
+    }
+
+    messages.appendChild(card);
+  }
+
   function renderThreadControls(conversation) {
     const controls = document.getElementById('threadControls');
     const assignedLabel = document.getElementById('assignedTo');
@@ -743,6 +960,9 @@
         ' · ' + (conversation.messageCount || 0) + ' messages';
 
       if (!older) messages.innerHTML = '';
+      // The tagged post sits above the thread, not inside it: it is what the
+      // whole conversation is ABOUT, not one message in it.
+      if (!older) renderMentionContext(conversation);
       const list = data.messages || [];
       if (list.length === 0 && !older) {
         messages.appendChild(Object.assign(document.createElement('p'), {
