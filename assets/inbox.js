@@ -98,6 +98,31 @@
     title.textContent =
       (customer && customer.displayName) ||
       (customer ? 'Unnamed customer' : conversation.conversationKind.replace(/_/g, ' '));
+
+    /*
+     * The picture, which the API has returned all along and nothing ever drew.
+     * The link is Meta's and EXPIRES after a few days, so a failure to load is
+     * expected: the image removes itself and the name carries the row, rather
+     * than leaving a broken-image icon next to every older conversation.
+     */
+    if (customer && customer.avatarUrl) {
+      var face = document.createElement('img');
+      face.src = customer.avatarUrl;
+      face.alt = '';
+      face.loading = 'lazy';
+      face.width = 28;
+      face.height = 28;
+      face.style.borderRadius = '50%';
+      face.style.verticalAlign = 'middle';
+      face.style.marginRight = '8px';
+      face.addEventListener('error', function () { face.remove(); });
+      title.prepend(face);
+    }
+
+    // Triage at a glance: someone who follows you is not a cold contact.
+    if (customer && customer.followsUs) title.appendChild(pill('follows you', 'active'));
+    if (customer && customer.isVerified) title.appendChild(pill('verified', 'none'));
+
     left.appendChild(title);
     left.appendChild(document.createElement('br'));
     const meta = document.createElement('small');
@@ -232,7 +257,17 @@
       link.href = attachment.url;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
-      link.textContent = attachment.platformType || 'attachment';
+      /*
+       * A shared reel or post is the commonest document here and "share" told
+       * an agent nothing. The permalink says which it is, and unlike the CDN
+       * links it does not expire — so this is a link worth following.
+       */
+      link.textContent =
+        attachment.platformType === 'share'
+          ? attachment.url.indexOf('/reel/') !== -1
+            ? 'Shared a reel'
+            : 'Shared a post'
+          : attachment.platformType || 'attachment';
       slot.appendChild(link);
       return wrap;
     }
@@ -308,8 +343,29 @@
       quote.style.paddingLeft = '8px';
       quote.style.marginBottom = '4px';
       quote.style.opacity = '0.75';
+
+      /*
+       * WHO was answered, then WHAT. Three states, not two: an answer to
+       * something we sent, an answer to something the customer said earlier,
+       * and an answer to a message we never received — which says so plainly
+       * rather than pretending the reply is a loose line.
+       */
+      var who = document.createElement('strong');
+      who.style.display = 'block';
+      who.textContent = message.replyTo.isSelfReply
+        ? 'Replying to their own message'
+        : message.replyTo.direction === 'outbound'
+          ? 'Replying to you'
+          : 'Replying to';
+      quote.appendChild(who);
+
+      var what = document.createElement('span');
       // Excerpt only; the API trims it so the thread carries no second copy.
-      quote.textContent = message.replyTo.excerpt || '(no text)';
+      what.textContent = message.replyTo.refId
+        ? message.replyTo.excerpt || '(no text)'
+        : 'a message we never received';
+      quote.appendChild(what);
+
       left.appendChild(quote);
     }
 
