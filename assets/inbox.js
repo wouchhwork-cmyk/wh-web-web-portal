@@ -446,7 +446,21 @@
     const body = document.createElement('div');
     // Customer words: set as text, never as HTML.
     const attachments = message.attachments || [];
-    body.textContent = message.body || (attachments.length ? '' : '(no text)');
+
+    /*
+     * SENT, BUT THE PLATFORM WILL NOT SAY WHAT. A shared post, story or reel
+     * whose webhook Meta dropped: the resync recovers the message id and its
+     * time, and every read path returns it with no content — so this is
+     * permanent, not pending. "(no text)" read as the customer sending an empty
+     * message, which is the one thing that did not happen.
+     */
+    if (message.contentUnavailable) {
+      body.textContent = 'sent something Instagram will not show us';
+      body.style.fontStyle = 'italic';
+      body.style.opacity = '0.75';
+    } else {
+      body.textContent = message.body || (attachments.length ? '' : '(no text)');
+    }
 
     /*
      * UNSENT ON INSTAGRAM, and still shown here on purpose. The business is
