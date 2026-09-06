@@ -291,10 +291,27 @@
         mark.style.fontSize = '18px';
         card.appendChild(mark);
 
+        var text = document.createElement('span');
+
         var label = document.createElement('span');
         label.textContent = isReel ? 'Shared a reel' : 'Shared a post';
         label.style.display = 'block';
-        card.appendChild(label);
+        label.style.fontWeight = '600';
+        text.appendChild(label);
+
+        /*
+         * The URL itself, under the label. An agent about to open a link
+         * somebody else sent them should be able to see where it goes first —
+         * and it also says which reel, when the same thread carries several.
+         */
+        var href = document.createElement('small');
+        href.textContent = attachment.url;
+        href.style.display = 'block';
+        href.style.opacity = '0.7';
+        href.style.wordBreak = 'break-all';
+        text.appendChild(href);
+
+        card.appendChild(text);
 
         link.appendChild(card);
       } else {
