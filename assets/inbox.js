@@ -423,7 +423,45 @@
     // Customer words: set as text, never as HTML.
     const attachments = message.attachments || [];
     body.textContent = message.body || (attachments.length ? '' : '(no text)');
+
+    /*
+     * UNSENT ON INSTAGRAM, and still shown here on purpose. The business is
+     * accountable for the conversation, and a record that rewrites itself when
+     * somebody deletes a message is not a record — so the words stay and the
+     * marker says the platform no longer shows them. Struck through, so nobody
+     * quotes it back believing the customer can still see it.
+     */
+    if (message.deletedOnPlatform) {
+      body.style.textDecoration = 'line-through';
+      body.style.opacity = '0.7';
+    }
     left.appendChild(body);
+
+    if (message.deletedOnPlatform) {
+      var unsent = document.createElement('small');
+      unsent.className = 'hint';
+      unsent.style.display = 'block';
+      unsent.textContent =
+        'deleted on Instagram' +
+        (message.deletedOnPlatformAt ? ' · ' + when(message.deletedOnPlatformAt) : '') +
+        ' — kept here';
+      left.appendChild(unsent);
+    }
+
+    /*
+     * The customer's emoji on this message. Shown ON the message, because that
+     * is what it is: a reaction is a property of a message, not a line in the
+     * conversation.
+     */
+    if (message.reaction) {
+      var react = document.createElement('span');
+      react.style.display = 'inline-block';
+      react.style.marginTop = '2px';
+      react.style.fontSize = '15px';
+      react.title = message.reaction.name || 'reaction';
+      react.textContent = message.reaction.emoji || '\u2764\ufe0f';
+      left.appendChild(react);
+    }
 
     // Media, where there is any. Before this the thread showed "(no text)" for
     // a photo, a GIF, a video or a story mention — which is every message whose
@@ -438,6 +476,8 @@
     const parts = [message.direction || message.messageKind || ''];
     if (message.sentBy) parts.push(message.sentBy.name || 'a colleague');
     if (message.isInternalNote) parts.push('internal note');
+    // Read receipts are about OUR messages: whether the customer has seen it.
+    if (message.seenAt) parts.push('seen ' + when(message.seenAt));
     parts.push(when(message.platformSentAt || message.createdAt));
     meta.textContent = parts.filter(Boolean).join(' · ');
     left.appendChild(meta);
