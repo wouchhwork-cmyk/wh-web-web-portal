@@ -445,8 +445,64 @@
 
     const right = document.createElement('div');
     if (message.status) right.appendChild(pill(message.status, message.status));
+
+    /*
+     * Answer THIS message, the way the customer can answer ours. Offered only
+     * where the platform can act on it: a message with no platform id — an
+     * internal note, or a send still in the relay — has nothing to quote.
+     */
+    if (message.canBeRepliedTo) {
+      var reply = document.createElement('button');
+      reply.className = 'secondary';
+      reply.style.marginLeft = '8px';
+      reply.textContent = 'Reply';
+      reply.addEventListener('click', function () {
+        setReplyTarget(message);
+      });
+      right.appendChild(reply);
+    }
+
     row.appendChild(right);
     return row;
+  }
+
+  /*
+   * What the next reply will answer, held until it is sent or cleared. Kept
+   * beside the composer rather than in the message row so it survives the
+   * thread re-rendering under it.
+   */
+  var replyTarget = null;
+
+  function setReplyTarget(message) {
+    replyTarget = message;
+    renderReplyTarget();
+    var box = document.getElementById('replyBody');
+    if (box) box.focus();
+  }
+
+  function clearReplyTarget() {
+    replyTarget = null;
+    renderReplyTarget();
+  }
+
+  function renderReplyTarget() {
+    var banner = document.getElementById('replyTargetBanner');
+    if (!banner) return;
+    banner.textContent = '';
+    banner.hidden = replyTarget === null;
+    if (replyTarget === null) return;
+
+    var label = document.createElement('span');
+    label.textContent =
+      'Replying to: ' + ((replyTarget.body || '').slice(0, 60) || '(no text)');
+    banner.appendChild(label);
+
+    var cancel = document.createElement('button');
+    cancel.className = 'secondary';
+    cancel.style.marginLeft = '8px';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', clearReplyTarget);
+    banner.appendChild(cancel);
   }
 
 
@@ -691,9 +747,14 @@
           // The SAME key for every attempt at this message, so a retry after a
           // timeout returns the original rather than sending a second copy.
           idempotencyKey: replyKey,
+          // Answering one message in particular, when the agent chose one. The
+          // API refuses this on an internal note, which is why the control is
+          // hidden while the note box is ticked.
+          ...(replyTarget ? { replyToMessageRefId: replyTarget.refId } : {}),
         },
       });
       document.getElementById('replyBody').value = '';
+      clearReplyTarget();
       // Delivered, so the next thing typed is a different message and gets its
       // own key. Only ever reset on SUCCESS.
       replyKey = null;

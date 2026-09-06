@@ -84,6 +84,9 @@
       </div>
       <div id="messages"></div>
       <div id="replyBox" hidden>
+        <!-- What the next reply will answer, when the agent picked a message. -->
+        <div id="replyTargetBanner" class="hint" hidden
+             style="border-left:3px solid currentColor;padding-left:8px;margin-bottom:6px"></div>
         <label for="replyBody">Reply</label>
         <textarea id="replyBody" rows="3" maxlength="5000"
                   placeholder="Type a reply…"></textarea>
