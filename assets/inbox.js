@@ -294,6 +294,25 @@
     row.className = 'row';
 
     const left = document.createElement('div');
+
+    /*
+     * WHAT THIS ANSWERS, above the message itself — the way every messaging app
+     * draws it. Instagram lets a customer reply to one specific message, and
+     * without this their "Reply" is a loose line and nobody can tell which of
+     * five outbound messages it was aimed at.
+     */
+    if (message.replyTo) {
+      var quote = document.createElement('div');
+      quote.className = 'hint';
+      quote.style.borderLeft = '3px solid currentColor';
+      quote.style.paddingLeft = '8px';
+      quote.style.marginBottom = '4px';
+      quote.style.opacity = '0.75';
+      // Excerpt only; the API trims it so the thread carries no second copy.
+      quote.textContent = message.replyTo.excerpt || '(no text)';
+      left.appendChild(quote);
+    }
+
     const body = document.createElement('div');
     // Customer words: set as text, never as HTML.
     const attachments = message.attachments || [];
