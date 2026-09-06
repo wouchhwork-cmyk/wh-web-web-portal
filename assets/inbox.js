@@ -253,21 +253,54 @@
     }
 
     if (attachment.mediaKind === 'document') {
+      /*
+       * A SHARED REEL CANNOT BE SHOWN, only linked. Instagram serves its embed
+       * page with x-frame-options: DENY, the oEmbed API that returns a
+       * thumbnail needs Meta oEmbed Read through App Review, and the public
+       * page carries no Open Graph tags for an unauthenticated fetch. The
+       * Graph media endpoints only read media on accounts we manage, and this
+       * is somebody else's.
+       *
+       * So it is drawn as a card rather than a bare link: an agent should be
+       * able to see at a glance that a reel was shared, without the row looking
+       * like a footnote. The permalink is permanent, unlike everything else
+       * here, so following it always works.
+       */
+      var isShare = attachment.platformType === 'share';
+      var isReel = isShare && attachment.url.indexOf('/reel/') !== -1;
+
       var link = document.createElement('a');
       link.href = attachment.url;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
-      /*
-       * A shared reel or post is the commonest document here and "share" told
-       * an agent nothing. The permalink says which it is, and unlike the CDN
-       * links it does not expire — so this is a link worth following.
-       */
-      link.textContent =
-        attachment.platformType === 'share'
-          ? attachment.url.indexOf('/reel/') !== -1
-            ? 'Shared a reel'
-            : 'Shared a post'
-          : attachment.platformType || 'attachment';
+      link.style.display = 'inline-block';
+      link.style.textDecoration = 'none';
+
+      if (isShare) {
+        var card = document.createElement('span');
+        card.style.display = 'inline-flex';
+        card.style.alignItems = 'center';
+        card.style.gap = '8px';
+        card.style.border = '1px solid currentColor';
+        card.style.borderRadius = '8px';
+        card.style.padding = '8px 12px';
+        card.style.opacity = '0.85';
+
+        var mark = document.createElement('span');
+        mark.textContent = isReel ? '\u25B6' : '\u25A6';
+        mark.style.fontSize = '18px';
+        card.appendChild(mark);
+
+        var label = document.createElement('span');
+        label.textContent = isReel ? 'Shared a reel' : 'Shared a post';
+        label.style.display = 'block';
+        card.appendChild(label);
+
+        link.appendChild(card);
+      } else {
+        link.textContent = attachment.platformType || 'attachment';
+      }
+
       slot.appendChild(link);
       return wrap;
     }
