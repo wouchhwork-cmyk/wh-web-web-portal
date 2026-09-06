@@ -184,37 +184,38 @@
    *
    * The URL is the PLATFORM's CDN link, used directly: Meta's terms forbid
    * storing or caching the media on our side, so there is nothing of ours to
-   * serve. A link with `expires` dies with the content — about 24 hours for a
-   * story — so a failure to load is expected rather than broken, and says so.
+   * serve. A link the API marks `expires` dies with its content, about 24
+   * hours for a story, so a load failure is reported as "no longer available
+   * on the platform" rather than left as a broken image.
+   *
+   * A STORY MENTION HAS NO KNOWABLE TYPE. Meta labels the attachment
+   * `story_mention` whether the story was a photo or a video, and gives no
+   * mime type anywhere in the webhook — a video story's link answers
+   * `video/mp4`, and rendering it in an <img> simply fails. That failure used
+   * to be reported as "no longer available", which was wrong twice over: the
+   * link worked perfectly, and the message it replaced was the only thing on
+   * screen saying this was a story at all. So an image that fails is retried
+   * as a video before anything is declared gone.
    */
   function attachmentNode(attachment, messageKind) {
     var wrap = document.createElement('div');
     wrap.className = 'attachment';
 
-    if (!attachment.url) {
-      wrap.textContent = '(' + (attachment.mediaKind || 'attachment') + ', no link)';
-      return wrap;
-    }
-
     var isStory = messageKind === 'story_reply';
     if (isStory) {
       var tag = document.createElement('small');
       tag.className = 'hint';
+      tag.style.display = 'block';
       tag.textContent = 'mentioned you in their story';
       wrap.appendChild(tag);
     }
 
-    if (attachment.mediaKind === 'video') {
-      var video = document.createElement('video');
-      video.src = attachment.url;
-      video.controls = true;
-      video.preload = 'metadata';
-      video.style.maxWidth = '260px';
-      video.style.borderRadius = '8px';
-      video.addEventListener('error', function () {
-        wrap.replaceChildren(gone(attachment));
-      });
-      wrap.appendChild(video);
+    // The label above must survive whatever happens to the media below it.
+    var slot = document.createElement('div');
+    wrap.appendChild(slot);
+
+    if (!attachment.url) {
+      slot.textContent = '(' + (attachment.mediaKind || 'attachment') + ', no link)';
       return wrap;
     }
 
@@ -222,22 +223,26 @@
       var audio = document.createElement('audio');
       audio.src = attachment.url;
       audio.controls = true;
-      wrap.appendChild(audio);
+      slot.appendChild(audio);
       return wrap;
     }
 
-    // image, gif, sticker — and anything unrecognised, which is far more useful
-    // rendered as a link than swallowed.
     if (attachment.mediaKind === 'document') {
       var link = document.createElement('a');
       link.href = attachment.url;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       link.textContent = attachment.platformType || 'attachment';
-      wrap.appendChild(link);
+      slot.appendChild(link);
       return wrap;
     }
 
+    if (attachment.mediaKind === 'video') {
+      slot.appendChild(videoNode(attachment, slot));
+      return wrap;
+    }
+
+    // image, gif, sticker — and a story mention, which may be either.
     var image = document.createElement('img');
     image.src = attachment.url;
     image.alt = isStory ? 'story mention' : attachment.mediaKind || 'attachment';
@@ -245,13 +250,36 @@
     image.style.maxWidth = '220px';
     image.style.borderRadius = '8px';
     image.addEventListener('error', function () {
-      wrap.replaceChildren(gone(attachment));
+      /*
+       * A story mention that will not load as a picture is very often a VIDEO
+       * story. Try that before giving up — the alternative is telling somebody
+       * their story vanished when it is playing fine.
+       */
+      if (isStory) {
+        slot.replaceChildren(videoNode(attachment, slot));
+        return;
+      }
+      slot.replaceChildren(gone(attachment));
     });
-    wrap.appendChild(image);
+    slot.appendChild(image);
     return wrap;
   }
 
-  /** What to show once a platform link has expired. */
+  function videoNode(attachment, slot) {
+    var video = document.createElement('video');
+    video.src = attachment.url;
+    video.controls = true;
+    video.preload = 'metadata';
+    video.playsInline = true;
+    video.style.maxWidth = '260px';
+    video.style.borderRadius = '8px';
+    video.addEventListener('error', function () {
+      slot.replaceChildren(gone(attachment));
+    });
+    return video;
+  }
+
+  /** What to show once a platform link has genuinely stopped working. */
   function gone(attachment) {
     var note = document.createElement('small');
     note.className = 'hint';
