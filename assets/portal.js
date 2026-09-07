@@ -88,6 +88,7 @@
 
     const canSee = {
       linkInbox: me.permissions.indexOf('conversations.view') !== -1,
+      linkMentions: me.permissions.indexOf('conversations.view') !== -1,
       linkPosts: me.permissions.indexOf('posts.view') !== -1,
       linkCustomers: me.permissions.indexOf('customers.view') !== -1,
       linkTeam: me.permissions.indexOf('employees.view') !== -1,
