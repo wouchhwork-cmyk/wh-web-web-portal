@@ -192,8 +192,25 @@
       image.src = context.previewUrl;
       image.alt = '';
       image.style.cssText = 'max-width:100%;max-height:320px;border-radius:8px;display:block';
+      /*
+       * A PREVIEW IS NOT ALWAYS A STILL. Instagram's `media_url` on a reel can
+       * be the .mp4 itself, and an <img> pointed at a video simply fails —
+       * which then reported "no longer available" about a post that was fine.
+       *
+       * The API prefers the thumbnail now, so this should rarely fire; it is
+       * kept because the same discovery-by-trying is already how the inbox
+       * handles media Meta gives no type for, and a playable video beats an
+       * apology either way.
+       */
       image.onerror = function () {
-        image.replaceWith(text('p', 'The image is no longer available.', 'hint'));
+        var video = document.createElement('video');
+        video.src = context.previewUrl;
+        video.controls = true;
+        video.style.cssText = 'max-width:100%;max-height:320px;border-radius:8px;display:block';
+        video.onerror = function () {
+          video.replaceWith(text('p', 'The preview is no longer available.', 'hint'));
+        };
+        image.replaceWith(video);
       };
       panel.appendChild(image);
     }
@@ -302,7 +319,15 @@
        * sticker. Instagram exposes NO media field on a comment at all, so the
        * content is genuinely unreachable rather than merely not requested.
        */
-      row.appendChild(text('em', 'a reply we cannot read — Instagram gives us no media for it'));
+      /*
+       * A comment with no text is a MEDIA comment — a photo, a GIF, a sticker.
+       * Instagram exposes no media field on a comment at all, so the content is
+       * unreachable rather than merely unrequested, and saying which is the
+       * difference between "we failed" and "the platform does not offer it".
+       */
+      row.appendChild(
+        text('em', 'a photo or GIF — Instagram exposes no media on a comment, so we cannot show it'),
+      );
     }
 
     var meta = [];
@@ -338,13 +363,39 @@
        * is the whole point: without this the reply reads as if it opened the
        * conversation, and an agent answers the wrong thing.
        */
-      panel.appendChild(
+      /*
+       * A DEAD END IS NOT AN ANSWER. The tag sits under a stranger's comment,
+       * and Instagram refuses to describe that comment by either route — the
+       * mentions edge answers `(#10) User is not mentioned in the comment`, and
+       * the post's own comment list returns one page that does not contain it.
+       *
+       * But the agent does not actually need us to fetch it: the deep link
+       * opens their own reply IN PLACE, with the comment it answers directly
+       * above. So this offers the way there instead of just apologising.
+       */
+      var missing = document.createElement('div');
+      missing.appendChild(
+        text('strong', 'This was a reply to somebody else\u2019s comment'),
+      );
+      missing.appendChild(
         text(
           'small',
-          'This was a reply to someone else\u2019s comment, which Instagram will not show us.',
+          'Instagram will not tell us what that comment said \u2014 open the mention on Instagram to read it in place.',
           'hint',
         ),
       );
+
+      if (context.commentUrl) {
+        var jump = document.createElement('a');
+        jump.href = context.commentUrl;
+        jump.target = '_blank';
+        jump.rel = 'noopener noreferrer';
+        jump.textContent = 'See it in context on Instagram \u2192';
+        jump.style.display = 'block';
+        missing.appendChild(jump);
+      }
+
+      panel.appendChild(missing);
       panel.appendChild(document.createElement('hr'));
     } else if (context.parentComment) {
       panel.appendChild(text('small', 'This mention was a reply to:', 'hint'));
@@ -425,7 +476,15 @@
      * actively harmful mixed into the thread above — so it is one click away
      * and labelled for what it is.
      */
-    var postComments = context.postComments || [];
+    /*
+     * The mention is a comment on that post like any other, so it comes back in
+     * this list too — filtered out here for the same reason it is filtered out
+     * of the parent thread: it is already shown above, and seeing your own tag
+     * a third time reads as a third person saying it.
+     */
+    var postComments = (context.postComments || []).filter(function (comment) {
+      return !comment.isThisMention;
+    });
     if (postComments.length) {
       var box = document.createElement('details');
       var head = document.createElement('summary');
