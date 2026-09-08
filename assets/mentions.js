@@ -240,6 +240,21 @@
       panel.appendChild(commentLink);
     }
 
+    /*
+     * The share form Instagram's own app produces. Kept alongside the deep link
+     * because it is what somebody pasting from their phone will recognise, and
+     * it opens the comment sheet directly on mobile.
+     */
+    if (context.commentShareUrl) {
+      var shareLink = document.createElement('a');
+      shareLink.href = context.commentShareUrl;
+      shareLink.target = '_blank';
+      shareLink.rel = 'noopener noreferrer';
+      shareLink.textContent = 'Open with comments (app share link)';
+      shareLink.style.display = 'block';
+      panel.appendChild(shareLink);
+    }
+
     if (context.permalink) {
       var link = document.createElement('a');
       link.href = context.permalink;
@@ -400,6 +415,40 @@
           row.style.marginLeft = '20px';
           panel.appendChild(row);
         });
+    }
+
+    /*
+     * THE WIDER COMMENT SECTION, behind a disclosure and closed by default.
+     *
+     * It is the room, not the conversation: fifty anonymous lines, none of them
+     * answerable, most of them nothing to do with us. Useful to glance at, and
+     * actively harmful mixed into the thread above — so it is one click away
+     * and labelled for what it is.
+     */
+    var postComments = context.postComments || [];
+    if (postComments.length) {
+      var box = document.createElement('details');
+      var head = document.createElement('summary');
+      head.textContent =
+        'The rest of the comment section (' + postComments.length + ', nobody named)';
+      box.appendChild(head);
+
+      var note = text(
+        'small',
+        context.postCommentsReadAt
+          ? 'A snapshot from ' +
+              when(context.postCommentsReadAt) +
+              ' — Instagram sends nothing when somebody comments on another account\u2019s post.'
+          : 'A snapshot, not a live view.',
+        'hint',
+      );
+      note.style.display = 'block';
+      box.appendChild(note);
+
+      postComments.forEach(function (comment) {
+        box.appendChild(commentRow(comment));
+      });
+      panel.appendChild(box);
     }
 
     return panel;
