@@ -21,6 +21,12 @@
   let permissions = [];
   let cursor = null;
   let openRefId = null;
+  /*
+   * Whether the OPEN conversation allows comment moderation. The server decides
+   * it — Instagram permits hide and delete only to the owner of the media a
+   * comment sits on — so this is carried rather than re-derived.
+   */
+  let openCanModerate = false;
   let openConversation = null;
   /** This agent's own employee ref, so "assign to me" has something to send. */
   let myEmployeeRefId = null;
@@ -427,7 +433,7 @@
       var who = document.createElement('strong');
       who.style.display = 'block';
       who.textContent = message.replyTo.isSelfReply
-        ? 'Replying to their own message'
+        ? 'Replying to their own earlier message'
         : message.replyTo.direction === 'outbound'
           ? 'Replying to you'
           : 'Replying to';
@@ -522,6 +528,19 @@
       body.textContent = 'sent something Instagram will not show us';
       body.style.fontStyle = 'italic';
       body.style.opacity = '0.75';
+    } else if (message.platformSentNoText) {
+      /*
+       * A COMMENT THAT IS MEDIA. Instagram omits `text` entirely for a GIF, a
+       * sticker or a photo in a comment, and exposes no field for the media on
+       * ANY post — including our own, with full ownership, on every API version.
+       *
+       * This showed as a blank line, and the damage was not cosmetic: a reply
+       * underneath asking about it read as a non-sequitur, which is exactly how
+       * it turned up on live traffic.
+       */
+      body.textContent = 'a photo or GIF — Instagram gives us no media for a comment';
+      body.style.fontStyle = 'italic';
+      body.style.opacity = '0.75';
     } else {
       body.textContent = message.body || (attachments.length ? '' : '(no text)');
     }
@@ -576,6 +595,13 @@
     // WHO sent it, where the API knows: a shared inbox needs to show which
     // colleague answered, and the thread used to say only "outbound".
     const parts = [message.direction || message.messageKind || ''];
+    /*
+     * WHO WROTE IT. A comment thread carries several different customers — one
+     * post, many commenters — and every inbound message was drawn as an unnamed
+     * "inbound", so an agent could not tell two people apart or notice that a
+     * reply came from somebody else entirely.
+     */
+    if (message.author) parts.push('@' + message.author);
     if (message.sentBy) parts.push(message.sentBy.name || 'a colleague');
     if (message.isInternalNote) parts.push('internal note');
     // Read receipts are about OUR messages: whether the customer has seen it.
@@ -593,6 +619,41 @@
      * where the platform can act on it: a message with no platform id — an
      * internal note, or a send still in the relay — has nothing to quote.
      */
+    /*
+     * HIDE AND DELETE, on comments on our OWN post only.
+     *
+     * Both are offered together because they answer different needs: hiding is
+     * reversible and takes the comment off the post for everybody else, while
+     * deleting is permanent. Delete confirms first — Instagram sends no webhook
+     * when a comment is deleted, so there is no undo and no way for us even to
+     * observe it happening.
+     *
+     * Only for the customer's own comments: our replies are ours to delete too,
+     * but the platform id is what matters and both have one, so the control is
+     * offered on anything the platform can act on.
+     */
+    if (openCanModerate && message.canBeRepliedTo) {
+      var hide = document.createElement('button');
+      hide.className = 'secondary';
+      hide.style.marginLeft = '8px';
+      hide.textContent = message.hiddenOnPlatform ? 'Unhide' : 'Hide';
+      hide.addEventListener('click', function () {
+        void moderate(message, message.hiddenOnPlatform ? 'unhide' : 'hide');
+      });
+      right.appendChild(hide);
+
+      var remove = document.createElement('button');
+      remove.className = 'secondary';
+      remove.style.marginLeft = '8px';
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', function () {
+        // Permanent on Instagram, and we cannot detect it being undone.
+        if (!window.confirm('Delete this comment on Instagram? This cannot be undone.')) return;
+        void moderate(message, 'delete');
+      });
+      right.appendChild(remove);
+    }
+
     if (message.canBeRepliedTo) {
       var reply = document.createElement('button');
       reply.className = 'secondary';
@@ -959,6 +1020,20 @@
         ' · ' + (conversation.status || '') +
         ' · ' + (conversation.messageCount || 0) + ' messages';
 
+      /*
+       * SET BEFORE THE ROWS ARE BUILT, because messageRow reads it — placed
+       * after the draw it was always one thread behind, so opening a moderable
+       * conversation showed no controls until you opened another.
+       *
+       * Both halves are required: the permission to manage, and the platform
+       * actually allowing it. The server answers the second — Instagram permits
+       * moderation only on a comment sitting on a post we own — so this carries
+       * its answer rather than guessing from the conversation kind.
+       */
+      openCanModerate =
+        conversation.canModerateComments === true &&
+        permissions.indexOf('conversations.manage') !== -1;
+
       if (!older) messages.innerHTML = '';
       // The tagged post sits above the thread, not inside it: it is what the
       // whole conversation is ABOUT, not one message in it.
@@ -986,6 +1061,7 @@
        */
       const canReply = permissions.indexOf('conversations.reply') !== -1;
       replyBox.hidden = !canReply;
+
 
       const blocked = conversation.canReply === false;
       const send = document.getElementById('sendReply');
@@ -1019,6 +1095,41 @@
       } catch (_) { /* the unread badge is cosmetic */ }
     } catch (error) {
       messages.innerHTML = '';
+      handle(error, threadMessage);
+    }
+  }
+
+  /**
+   * Hides, unhides or deletes one comment on the platform.
+   *
+   * Accepted rather than applied: the API writes to the outbox and the relay
+   * performs the call, so this reloads the thread instead of pretending it knows
+   * the outcome. The server has already applied the local state, which it must —
+   * Instagram sends no webhook when a comment is hidden or deleted, so nothing
+   * would ever tell us.
+   */
+  async function moderate(message, action) {
+    if (!openRefId) return;
+    try {
+      await window.api.request(
+        '/conversations/' +
+          encodeURIComponent(openRefId) +
+          '/messages/' +
+          encodeURIComponent(message.refId) +
+          '/moderate',
+        { method: 'POST', body: { action: action } },
+      );
+      await openThread(openRefId);
+      show(
+        threadMessage,
+        'success',
+        action === 'delete'
+          ? 'Deleting on Instagram. This cannot be undone.'
+          : action === 'hide'
+            ? 'Hiding on Instagram.'
+            : 'Unhiding on Instagram.',
+      );
+    } catch (error) {
       handle(error, threadMessage);
     }
   }
