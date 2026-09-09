@@ -21,6 +21,8 @@
   var backToList = document.getElementById('backToList');
 
   var cursor = null;
+  /** Which thread is open, so a live change to THAT one can redraw it. */
+  var openRefId = null;
 
   function show(target, kind, text, code) {
     target.innerHTML = '';
@@ -147,7 +149,15 @@
     return row;
   }
 
-  async function loadPage() {
+  async function loadPage(reset) {
+    /*
+     * A REFRESH REPLACES, a "load more" APPENDS. Without the distinction a live
+     * update would staple a second copy of page one onto the list.
+     */
+    if (reset) {
+      cursor = null;
+      rows.innerHTML = '';
+    }
     try {
       var query = '/conversations?kind=mention&limit=20';
       if (cursor) query += '&cursor=' + encodeURIComponent(cursor);
@@ -187,32 +197,57 @@
 
     panel.appendChild(text('h2', 'The post'));
 
-    if (context.previewUrl) {
+    var MEDIA_CSS = 'max-width:100%;max-height:320px;border-radius:8px;display:block';
+
+    /** The thumbnail, or an honest line when even that has expired. */
+    function stillPreview() {
       var image = document.createElement('img');
       image.src = context.previewUrl;
       image.alt = '';
-      image.style.cssText = 'max-width:100%;max-height:320px;border-radius:8px;display:block';
-      /*
-       * A PREVIEW IS NOT ALWAYS A STILL. Instagram's `media_url` on a reel can
-       * be the .mp4 itself, and an <img> pointed at a video simply fails —
-       * which then reported "no longer available" about a post that was fine.
-       *
-       * The API prefers the thumbnail now, so this should rarely fire; it is
-       * kept because the same discovery-by-trying is already how the inbox
-       * handles media Meta gives no type for, and a playable video beats an
-       * apology either way.
-       */
+      image.style.cssText = MEDIA_CSS;
       image.onerror = function () {
-        var video = document.createElement('video');
-        video.src = context.previewUrl;
-        video.controls = true;
-        video.style.cssText = 'max-width:100%;max-height:320px;border-radius:8px;display:block';
-        video.onerror = function () {
-          video.replaceWith(text('p', 'The preview is no longer available.', 'hint'));
-        };
-        image.replaceWith(video);
+        image.replaceWith(text('p', 'The preview is no longer available.', 'hint'));
       };
-      panel.appendChild(image);
+      return image;
+    }
+
+    /*
+     * PLAY THE REEL WHEN WE ACTUALLY HAVE IT.
+     *
+     * A reel's `media_url` is sometimes the real .mp4 — 1.8 MB of playable
+     * video/mp4, verified on the wire — and it was being stored, served to the
+     * client, and then ignored while the page showed a still. There is no
+     * reason to make an agent leave for Instagram to watch something we already
+     * hold.
+     *
+     * NOT UNCONDITIONAL, because Meta is inconsistent here: across four reels
+     * one gave neither field, one only a thumbnail, and two both. So this plays
+     * only when there IS a video, and falls back to the still otherwise.
+     *
+     * `poster` is the thumbnail, so the card looks identical before playback
+     * and does not download the video until somebody asks for it. And these are
+     * signed CDN links that expire, so a reel that plays today 404s later —
+     * hence the fallback to the still, and then to a plain line, rather than a
+     * broken player.
+     */
+    var hasVideo = context.mediaType === 'VIDEO' && !!context.mediaUrl;
+
+    if (hasVideo) {
+      var video = document.createElement('video');
+      video.src = context.mediaUrl;
+      video.controls = true;
+      // Metadata only: the list of mentions should not pull megabytes per card.
+      video.preload = 'metadata';
+      if (context.thumbnailUrl) video.poster = context.thumbnailUrl;
+      video.style.cssText = MEDIA_CSS;
+      video.onerror = function () {
+        // The signed link has expired. The still often outlives it.
+        if (context.previewUrl) video.replaceWith(stillPreview());
+        else video.replaceWith(text('p', 'The video is no longer available.', 'hint'));
+      };
+      panel.appendChild(video);
+    } else if (context.previewUrl) {
+      panel.appendChild(stillPreview());
     }
 
     if (context.ownerUsername) {
@@ -402,6 +437,23 @@
       panel.appendChild(commentRow(context.parentComment));
 
       /*
+       * THE SAME EXCHANGE, FILED TWICE. When the comment this answered also
+       * tagged us, it is a mention of ours in its own right — so the parent is
+       * not just quoted text, it is another thread with its own post card,
+       * replies and reply box. Offering the jump beats showing the words twice
+       * with no way to reach the conversation they belong to.
+       */
+      if (context.parentMention) {
+        var jumpToParent = document.createElement('button');
+        jumpToParent.className = 'secondary';
+        jumpToParent.textContent = 'Open that mention →';
+        jumpToParent.addEventListener('click', function () {
+          openThread(context.parentMention.refId);
+        });
+        panel.appendChild(jumpToParent);
+      }
+
+      /*
        * THE MENTION IS A SIBLING OF ITSELF. It sits in this thread like any
        * other reply, so drawing the list unfiltered showed it twice — once
        * anonymously here and once as the message below, reading as two people
@@ -570,6 +622,7 @@
   }
 
   async function openThread(refId) {
+    openRefId = refId;
     listView.hidden = true;
     threadView.hidden = false;
     threadBody.innerHTML = '';
@@ -599,12 +652,151 @@
     }
   }
 
+  /* ------------------------------------------------------------------ *
+   * Live updates
+   *
+   * The mentions page had NONE, while the inbox did — so a mention that
+   * arrived while the page was open simply never showed, and the honest
+   * conclusion to draw was that it had not arrived at all. Two list pages in
+   * one portal, one live and one not, with nothing saying which.
+   *
+   * Same approach as the inbox, and for the same reason: fetch + a readable
+   * stream rather than EventSource, because EventSource cannot set an
+   * Authorization header and the alternatives are a token in the query string
+   * (which lands in access logs) or a ticket endpoint.
+   *
+   * The stream is an OPTIMISATION. The slow poll runs regardless, so a dropped
+   * connection or a hostile proxy costs latency and nothing else.
+   * ------------------------------------------------------------------ */
+  var POLL_MS = 30000;
+  var STREAM_RETRY_BASE_MS = 2000;
+  var STREAM_RETRY_MAX_MS = 60000;
+
+  var streamAbort = null;
+  var streamAttempt = 0;
+
+  function onConversationChanged(change) {
+    /*
+     * The stream carries EVERY conversation this business has, not just
+     * mentions — it is a nudge with a ref and nothing else. Rather than guess
+     * which kind changed, the list is simply re-read; the server filters to
+     * mentions, so an unrelated DM costs one cheap query and no wrong rows.
+     */
+    if (!threadView.hidden) {
+      // A thread is open: refresh it only when it is the one that moved.
+      if (openRefId && change && change.conversationRefId === openRefId) {
+        void openThread(openRefId);
+      }
+      return;
+    }
+    loadPage(true);
+  }
+
+  /** Parses SSE frames out of a byte stream. */
+  async function consume(response) {
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+
+    for (;;) {
+      var chunk = await reader.read();
+      if (chunk.done) return;
+      buffer += decoder.decode(chunk.value, { stream: true });
+
+      // Frames are blank-line separated; the tail is a partial frame and stays.
+      var frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+
+      frames.forEach(function (frame) {
+        var event = 'message';
+        var data = '';
+        frame.split('\n').forEach(function (line) {
+          if (line.indexOf('event:') === 0) event = line.slice(6).trim();
+          else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+          // A ':' line is a heartbeat comment — ignored, but it did its job.
+        });
+
+        /*
+         * The server caps a stream's lifetime on purpose, because an open
+         * stream is otherwise an authorisation with no expiry. It says so
+         * first, and reconnecting at once keeps that invisible rather than
+         * waiting out a backoff for something that is not a failure.
+         */
+        if (event === 'expired') {
+          streamAttempt = 0;
+          return;
+        }
+
+        if (event !== 'inbox' || !data) return;
+        try {
+          onConversationChanged(JSON.parse(data));
+        } catch (_) {
+          // A malformed frame is not worth tearing the stream down for.
+        }
+      });
+    }
+  }
+
+  async function openStream() {
+    var session = window.api.readSession();
+    if (!session || !session.accessToken) return;
+
+    streamAbort = new AbortController();
+    try {
+      var response = await fetch(window.WOUCHH_CONFIG.apiBaseUrl + '/conversations/stream', {
+        headers: { Accept: 'text/event-stream', Authorization: 'Bearer ' + session.accessToken },
+        credentials: 'include',
+        signal: streamAbort.signal,
+      });
+      if (!response.ok || !response.body) throw new Error('stream rejected: ' + response.status);
+      streamAttempt = 0;
+      await consume(response);
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;
+    }
+
+    // Ended or failed: back off and retry. The poll covers the gap.
+    streamAttempt += 1;
+    var delay = Math.min(STREAM_RETRY_BASE_MS * Math.pow(2, streamAttempt - 1), STREAM_RETRY_MAX_MS);
+    setTimeout(function () {
+      if (!document.hidden) void openStream();
+    }, delay);
+  }
+
+  function startLiveUpdates() {
+    // The floor: with no stream at all the list still stays roughly current.
+    var pollTimer = setInterval(function () {
+      if (!document.hidden && threadView.hidden) loadPage(true);
+    }, POLL_MS);
+    if (pollTimer && pollTimer.unref) pollTimer.unref();
+
+    void openStream();
+
+    // A backgrounded tab is not worth a connection; reopening on return also
+    // catches whatever arrived while it was hidden.
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        if (streamAbort) streamAbort.abort();
+        return;
+      }
+      if (threadView.hidden) loadPage(true);
+      void openStream();
+    });
+  }
+
   backToList.addEventListener('click', function () {
+    openRefId = null;
     threadView.hidden = true;
     listView.hidden = false;
+    // Coming back from a thread is the natural moment to pick up anything that
+    // arrived while it was open.
+    loadPage(true);
   });
 
-  loadMore.addEventListener('click', loadPage);
+  // Explicitly not passing the click event through as `reset`.
+  loadMore.addEventListener('click', function () {
+    loadPage(false);
+  });
 
   (async function start() {
     try {
@@ -613,6 +805,7 @@
     } catch (_) {
       // The header name is decoration; the list is the page.
     }
-    loadPage();
+    loadPage(true);
+    startLiveUpdates();
   })();
 })();
