@@ -372,6 +372,11 @@
        * which. Reporting "no longer available" for a video that plays perfectly
        * was the first version of this.
        *
+       * The API now SAYS when it is guessing — `attachment.kindIsGuessed`, set
+       * for a story mention, whose payload carries no type at all. So this
+       * first failure is declared rather than assumed, and the two sides agree
+       * instead of each carrying its own private theory.
+       *
        * Tried once: the video's own error handler shows the placeholder.
        */
       slot.replaceChildren(videoNode(attachment, slot));
