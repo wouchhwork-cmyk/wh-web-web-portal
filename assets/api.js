@@ -170,6 +170,42 @@
   }
 
   /**
+   * A listing that never stops handing back a cursor stops here.
+   *
+   * Twenty pages of the largest page size is far more than any screen using
+   * this has rows, so reaching it means a bug at one end or the other — and
+   * looping forever is the one outcome worse than showing a short list.
+   */
+  const MAX_PAGES_FOLLOWED = 20;
+
+  /**
+   * Every page of a paginated listing, followed to the end.
+   *
+   * For the screens that genuinely want the whole set — the team table, the
+   * assignee picker — where paging the UI would be worse than one slightly
+   * longer load. Lists that can grow without bound (conversations, customers)
+   * must NOT use this; they page properly.
+   */
+  async function requestAll(path, options) {
+    const items = [];
+    let cursor = null;
+
+    for (let page = 0; page < MAX_PAGES_FOLLOWED; page += 1) {
+      const separator = path.indexOf('?') === -1 ? '?' : '&';
+      const suffix = cursor === null ? '' : separator + 'cursor=' + encodeURIComponent(cursor);
+      const result = await request(path + suffix, options);
+
+      items.push.apply(items, result.data || []);
+
+      const pagination = result.meta && result.meta.pagination;
+      if (!pagination || !pagination.hasMore || !pagination.nextCursor) return items;
+      cursor = pagination.nextCursor;
+    }
+
+    return items;
+  }
+
+  /**
    * Sends the caller wherever their session says they belong.
    *
    * Called after every successful sign-in and on every page load of a protected
@@ -201,6 +237,7 @@
   window.api = {
     ApiError: ApiError,
     request: request,
+    requestAll: requestAll,
     readSession: readSession,
     writeSession: writeSession,
     clearSession: clearSession,

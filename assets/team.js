@@ -77,9 +77,11 @@
   async function loadTeam() {
     const includeSupport = document.getElementById('includeSupport').checked;
     try {
-      const people = (await window.api.request(
+      // Every page: the table shows the whole team, and the endpoint now caps
+      // a single response at one page.
+      const people = await window.api.requestAll(
         '/employees' + (includeSupport ? '?includeSupport=true' : ''),
-      )).data;
+      );
 
       rows.innerHTML = '';
       if (people.length === 0) {

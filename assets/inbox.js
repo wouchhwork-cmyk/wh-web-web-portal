@@ -733,9 +733,10 @@
       return team;
     }
     try {
-      // No query: the schema is strict, and an unknown parameter is a 400.
-      const result = await window.api.request('/employees');
-      team = (result.data || []).filter(function (person) {
+      // Every page: somebody on page two is still somebody the work can be
+      // assigned to, and a picker that silently omits them is worse than slow.
+      const people = await window.api.requestAll('/employees');
+      team = people.filter(function (person) {
         // Only somebody who can actually pick the work up.
         return person.status === 'active';
       });
