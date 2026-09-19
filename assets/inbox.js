@@ -233,11 +233,34 @@
     wrap.className = 'attachment';
 
     var isStory = messageKind === 'story_reply';
-    if (isStory) {
+
+    /*
+     * SAY WHAT WAS SHARED, because the picture alone does not.
+     *
+     * A story somebody sent you and a story somebody FORWARDED look identical
+     * once rendered — same CDN image, same bubble — and they are not the same
+     * thing at all. The platform type is the only thing that separates them,
+     * and it was being used for `share` and ignored otherwise.
+     *
+     * The wording of the two story lines is deliberate. A story MENTION belongs
+     * to the sender, so "their story" is a fact. A shared story belongs to a
+     * third party we cannot identify — Meta sends a media id and an expiring
+     * link and nothing else, and that id resolves for nobody but the connected
+     * account — so it says "someone's" rather than inventing an owner.
+     */
+    var SHARED_LABELS = {
+      story_mention: 'mentioned you in their story',
+      ig_story: "shared someone's story",
+      ig_reel: 'shared a reel',
+      ig_post: 'shared a post',
+    };
+
+    var label = SHARED_LABELS[attachment.platformType] || (isStory ? SHARED_LABELS.story_mention : null);
+    if (label) {
       var tag = document.createElement('small');
       tag.className = 'hint';
       tag.style.display = 'block';
-      tag.textContent = 'mentioned you in their story';
+      tag.textContent = label;
       wrap.appendChild(tag);
     }
 
