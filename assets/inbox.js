@@ -303,8 +303,28 @@
        * like a footnote. The permalink is permanent, unlike everything else
        * here, so following it always works.
        */
-      var isShare = attachment.platformType === 'share';
-      var isReel = isShare && attachment.url.indexOf('/reel/') !== -1;
+      /*
+       * `share` IS NOT THE ONLY NAME FOR A SHARE.
+       *
+       * Meta labels a forwarded reel or post `ig_reel` / `ig_post` on some
+       * deliveries and `share` on others — both carry the same thing, a
+       * permanent instagram.com permalink rather than a media file. Only
+       * `share` was recognised, so a reel shared on 19 Sep fell through to the
+       * image path, put an instagram.com PAGE into an <img>, failed, and
+       * reported "this video could not be loaded" about a link that works
+       * perfectly. The same reel shared on 08 Sep arrived as `share` and
+       * rendered its card correctly, which is why one showed a link and the
+       * other did not.
+       *
+       * Recognised by the LINK as well as the label: the thing that makes this
+       * a share is that the url is an instagram.com page, and that is true
+       * whatever Meta decides to call it next.
+       */
+      var SHARE_TYPES = ['share', 'ig_reel', 'ig_post'];
+      var isShare =
+        SHARE_TYPES.indexOf(attachment.platformType) !== -1 ||
+        (attachment.url || '').indexOf('instagram.com/') !== -1;
+      var isReel = isShare && (attachment.url || '').indexOf('/reel/') !== -1;
 
       var link = document.createElement('a');
       link.href = attachment.url;
