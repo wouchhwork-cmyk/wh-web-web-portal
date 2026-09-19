@@ -199,14 +199,38 @@
 
     var MEDIA_CSS = 'max-width:100%;max-height:320px;border-radius:8px;display:block';
 
-    /** The thumbnail, or an honest line when even that has expired. */
+    /**
+     * What to show when the media has gone.
+     *
+     * NOT JUST A LINE SAYING SO. Instagram's media links are signed and expire
+     * — the API now says as much in `mediaExpires` — but `permalink` does not,
+     * so there is always somewhere to send the person. Saying "no longer
+     * available" and stopping reads as "this post is gone", when the post is
+     * perfectly fine and one click away.
+     */
+    function mediaGone(what) {
+      if (!context.permalink) return text('p', what + ' is no longer available.', 'hint');
+
+      var wrap = document.createElement('p');
+      wrap.className = 'hint';
+      wrap.textContent = what + ' is no longer available — ';
+      var link = document.createElement('a');
+      link.href = context.permalink;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'open it on Instagram';
+      wrap.appendChild(link);
+      return wrap;
+    }
+
+    /** The thumbnail, or a way through to the post when even that has expired. */
     function stillPreview() {
       var image = document.createElement('img');
       image.src = context.previewUrl;
       image.alt = '';
       image.style.cssText = MEDIA_CSS;
       image.onerror = function () {
-        image.replaceWith(text('p', 'The preview is no longer available.', 'hint'));
+        image.replaceWith(mediaGone('The preview'));
       };
       return image;
     }
@@ -241,9 +265,13 @@
       if (context.thumbnailUrl) video.poster = context.thumbnailUrl;
       video.style.cssText = MEDIA_CSS;
       video.onerror = function () {
-        // The signed link has expired. The still often outlives it.
+        /*
+         * The signed link has expired. The still often outlives it — measured
+         * on one reel, the video lasted about 35 hours and the thumbnail about
+         * 4.5 days — so the still is tried before giving up.
+         */
         if (context.previewUrl) video.replaceWith(stillPreview());
-        else video.replaceWith(text('p', 'The video is no longer available.', 'hint'));
+        else video.replaceWith(mediaGone('The video'));
       };
       panel.appendChild(video);
     } else if (context.previewUrl) {
