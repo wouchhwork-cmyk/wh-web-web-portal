@@ -777,26 +777,64 @@
       : 'Tagged under a post';
     card.appendChild(heading);
 
-    if (context.mediaUrl) {
+    /*
+     * ASK WHAT IT IS, RATHER THAN GUESSING AND RECOVERING.
+     *
+     * This used to put `mediaUrl` into an <img> and wait for the error. On a
+     * reel `media_url` IS the .mp4 — 1.6 MB of video/mp4, verified on the wire
+     * — so the image always failed, and the video only appeared after a
+     * round trip that downloaded the whole file into a tag that could never
+     * render it. The API says `mediaType`, so this asks.
+     *
+     * The same order the mentions page uses: a thumbnail is always a still, and
+     * media_url is only an image when there is no thumbnail beside it.
+     */
+    var MEDIA_STYLE = 'max-height:160px;border-radius:6px;display:block;margin:6px 0';
+
+    /** Media is gone — but `permalink` never expires, so offer that instead. */
+    function mediaGone(what) {
+      var note = document.createElement('div');
+      note.className = 'hint';
+      note.textContent = what + ' is no longer available';
+      if (context.permalink) {
+        note.textContent += ' — ';
+        var link = document.createElement('a');
+        link.href = context.permalink;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'open it on Instagram';
+        note.appendChild(link);
+      }
+      return note;
+    }
+
+    function still() {
       var img = document.createElement('img');
-      img.src = context.mediaUrl;
+      img.src = context.previewUrl || context.mediaUrl;
       img.alt = 'the post they tagged you under';
-      img.style.maxHeight = '160px';
-      img.style.borderRadius = '6px';
-      img.style.display = 'block';
-      img.style.margin = '6px 0';
-      // A reel's media_url is a video file, and the CDN gives no type up front.
+      img.style.cssText = MEDIA_STYLE;
       img.onerror = function () {
-        var video = document.createElement('video');
-        video.src = context.mediaUrl;
-        video.controls = true;
-        video.style.maxHeight = '160px';
-        video.style.borderRadius = '6px';
-        video.style.display = 'block';
-        video.style.margin = '6px 0';
-        card.replaceChild(video, img);
+        img.replaceWith(mediaGone('The preview'));
       };
-      card.appendChild(img);
+      return img;
+    }
+
+    if (context.mediaType === 'VIDEO' && context.mediaUrl) {
+      var video = document.createElement('video');
+      video.src = context.mediaUrl;
+      video.controls = true;
+      // Metadata only: an inbox should not pull megabytes to show a card.
+      video.preload = 'metadata';
+      if (context.thumbnailUrl) video.poster = context.thumbnailUrl;
+      video.style.cssText = MEDIA_STYLE;
+      video.onerror = function () {
+        // The video link dies first; the still usually outlives it.
+        if (context.previewUrl) video.replaceWith(still());
+        else video.replaceWith(mediaGone('The video'));
+      };
+      card.appendChild(video);
+    } else if (context.previewUrl || context.mediaUrl) {
+      card.appendChild(still());
     }
 
     if (context.caption) {
