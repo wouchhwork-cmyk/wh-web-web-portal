@@ -276,6 +276,21 @@
       panel.appendChild(video);
     } else if (context.previewUrl) {
       panel.appendChild(stillPreview());
+
+      /*
+       * SAY WHY THERE IS NO PLAY BUTTON.
+       *
+       * Meta is inconsistent about `media_url` on a reel: asked for eleven
+       * fields on one, it returned ten and simply omitted the video — verified
+       * on the wire 19 Sep 2026, and the thumbnail came back fine. So a still
+       * with no player is the correct rendering, not a failure, and without a
+       * line saying so it reads as one. It cost somebody twenty minutes.
+       */
+      if (context.mediaType === 'VIDEO') {
+        panel.appendChild(
+          text('p', 'Instagram did not include the video for this post — open it there to watch.', 'hint'),
+        );
+      }
     }
 
     if (context.ownerUsername) {

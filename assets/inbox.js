@@ -835,6 +835,14 @@
       card.appendChild(video);
     } else if (context.previewUrl || context.mediaUrl) {
       card.appendChild(still());
+      // Meta sometimes omits media_url on a reel and sends the thumbnail
+      // anyway, so a still with no player is correct rather than broken.
+      if (context.mediaType === 'VIDEO') {
+        var noVideo = document.createElement('div');
+        noVideo.className = 'hint';
+        noVideo.textContent = 'Instagram did not include the video for this post.';
+        card.appendChild(noVideo);
+      }
     }
 
     if (context.caption) {
