@@ -135,3 +135,49 @@ tbody tr:hover { background: #fafbfc; }
 .feature { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .feature .name { flex: 1; }
 .feature .name small { display: block; color: var(--muted); font-weight: 400; }
+
+/* --- Meta rate-limit monitor (platform admin) ------------------------- */
+
+/*
+ * The bar is the whole point of the panel: a percentage in a table cell reads
+ * as just another number, and the one thing an operator needs to see at a
+ * glance is which pool is nearly full.
+ */
+.meter {
+  height: 8px;
+  border-radius: 4px;
+  background: #eef0f3;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.meter span { display: block; height: 100%; background: var(--ok); }
+.meter.warning span { background: var(--warn); }
+.meter.throttled span { background: var(--bad); }
+/*
+ * Striped rather than coloured, because "we cannot see this pool" is not a
+ * position on the scale. Painting it green would be a claim we have no basis
+ * for, and painting it red would cry wolf.
+ */
+.meter.unknown span {
+  background: repeating-linear-gradient(
+    45deg, #d7dbe0, #d7dbe0 4px, #eef0f3 4px, #eef0f3 8px
+  );
+}
+
+.pill.ok { background: #e7f6f0; color: var(--ok); }
+.pill.warning { background: #fdf3e4; color: var(--warn); }
+.pill.throttled { background: #fdeceb; color: var(--bad); }
+.pill.unknown { background: #eef0f3; color: var(--muted); }
+
+.rl-heading {
+  margin: 22px 0 8px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rl-table { width: 100%; }
+.rl-table td { vertical-align: top; }
+.rl-note { margin-top: 5px; font-size: 12px; }
+.rl-note.bad { color: var(--bad); }
+.muted { color: var(--muted); }

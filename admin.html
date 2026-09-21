@@ -60,11 +60,46 @@
       <div id="listMessage"></div>
     </div>
 
+    <div class="panel" id="rateLimitPanel">
+      <h2>Meta API rate limits</h2>
+      <p class="hint">
+        Meta runs <strong>two separate meters</strong> and the token decides which applies. The
+        <strong>app pool</strong> is one allowance for the whole developer app — roughly
+        <code>200 × daily active users</code> per hour — and it is drained by businesses
+        <em>connecting</em>, not by the inbox. The <strong>business pools</strong> are per business
+        per product and carry everything else.
+      </p>
+      <p class="hint">
+        Every figure Meta gives is a <strong>percentage of an allowance it never states</strong>, so
+        &ldquo;used&rdquo; is how close a pool is to being refused, and &ldquo;calls&rdquo; is our own
+        count. A pool showing <span class="pill unknown">unknown</span> is one Meta sent no header
+        for — that is not the same as zero.
+      </p>
+
+      <div class="row" style="margin-bottom:4px">
+        <div style="flex:0 0 auto">
+          <button class="secondary" id="rlRefresh">Refresh now</button>
+        </div>
+        <div style="flex:0 0 auto; display:flex; align-items:center; gap:8px">
+          <input type="checkbox" id="rlAuto" checked style="width:auto" />
+          <label for="rlAuto" style="margin:0">Auto-refresh</label>
+        </div>
+        <div style="flex:1 1 auto; text-align:right; color:var(--muted); font-size:13px"
+             id="rlUpdated"></div>
+      </div>
+
+      <div id="rlAttention"></div>
+      <div class="tiles" id="rlAppTiles" style="margin-top:14px"></div>
+      <div id="rlBody"><p class="hint">Loading…</p></div>
+      <div id="rlMessage"></div>
+    </div>
+
     <div class="panel" id="detail" hidden></div>
   </main>
 
   <script src="config.js"></script>
   <script src="assets/api.js"></script>
   <script src="assets/admin.js"></script>
+  <script src="assets/rate-limits.js"></script>
 </body>
 </html>
