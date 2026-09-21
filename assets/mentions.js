@@ -191,7 +191,7 @@
   /* -------------------------------------------------------------- thread -- */
 
   /** The post the mention was left under. */
-  function postCard(context) {
+  function postCard(context, conversationDetails) {
     var panel = document.createElement('div');
     panel.className = 'panel';
 
@@ -348,6 +348,36 @@
       shareLink.textContent = 'Open with comments (app share link)';
       shareLink.style.display = 'block';
       panel.appendChild(shareLink);
+    }
+
+    /*
+     * EVERYTHING WE HOLD ABOUT THE POST, on demand.
+     *
+     * The card above shows what an agent acts on. This is the rest — ids, the
+     * comment snapshot, the reply thread, the moment each was read — captured
+     * from Meta and otherwise invisible. Collapsed, so it costs nothing until
+     * somebody is working out what the platform actually said.
+     *
+     * Not part of the API contract: read it, decide what deserves a real field,
+     * promote that.
+     */
+    if (conversationDetails && Object.keys(conversationDetails).length > 0) {
+      var details = document.createElement('details');
+      details.style.marginTop = '8px';
+      var summary = document.createElement('summary');
+      summary.className = 'hint';
+      summary.style.cursor = 'pointer';
+      summary.textContent =
+        'everything Meta sent about this post (' + Object.keys(conversationDetails).length + ')';
+      details.appendChild(summary);
+      var dump = document.createElement('pre');
+      dump.style.cssText =
+        'white-space:pre-wrap;word-break:break-word;font-size:11px;margin:4px 0;' +
+        'max-height:300px;overflow:auto;opacity:0.85';
+      // textContent, never innerHTML: somebody else's words are in here.
+      dump.textContent = JSON.stringify(conversationDetails, null, 2);
+      details.appendChild(dump);
+      panel.appendChild(details);
     }
 
     if (context.permalink) {
@@ -677,7 +707,7 @@
       var messages = result.data.messages || [];
 
       var context = conversation.mentionContext;
-      if (context) threadBody.appendChild(postCard(context));
+      if (context) threadBody.appendChild(postCard(context, conversation.platformDetails));
       threadBody.appendChild(threadPanel(conversation, messages));
 
       /*

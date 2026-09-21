@@ -228,6 +228,43 @@
    * screen saying this was a story at all. So an image that fails is retried
    * as a video before anything is declared gone.
    */
+
+  /*
+   * EVERYTHING THE PLATFORM SENT, on demand.
+   *
+   * We capture far more than the thread shows — asset ids, story and reel ids,
+   * mime types, the shape of a shared post — and until now none of it was
+   * visible anywhere, which is how a captured field gets quietly dropped for
+   * looking useless. Collapsed by default so it costs an agent nothing, and one
+   * click away when somebody is trying to work out what Meta actually said.
+   *
+   * `platformDetails` is explicitly NOT part of the API contract: keys come and
+   * go as the projectors change. Read it, decide what deserves a real field,
+   * and promote that — do not branch on it.
+   */
+  function detailsPanel(summary, payload) {
+    if (!payload || Object.keys(payload).length === 0) return null;
+
+    const box = document.createElement('details');
+    box.style.marginTop = '4px';
+
+    const label = document.createElement('summary');
+    label.className = 'hint';
+    label.style.cursor = 'pointer';
+    label.textContent = summary + ' (' + Object.keys(payload).length + ')';
+    box.appendChild(label);
+
+    const body = document.createElement('pre');
+    body.style.cssText =
+      'white-space:pre-wrap;word-break:break-word;font-size:11px;margin:4px 0;' +
+      'max-height:260px;overflow:auto;opacity:0.85';
+    // textContent, never innerHTML: every value here came from a stranger.
+    body.textContent = JSON.stringify(payload, null, 2);
+    box.appendChild(body);
+
+    return box;
+  }
+
   function attachmentNode(attachment, messageKind) {
     var wrap = document.createElement('div');
     wrap.className = 'attachment';
@@ -637,6 +674,8 @@
     // whole content is the attachment.
     attachments.forEach(function (attachment) {
       left.appendChild(attachmentNode(attachment, message.messageKind));
+      const attachmentDetails = detailsPanel('everything Meta sent about this file', attachment.platformDetails);
+      if (attachmentDetails) left.appendChild(attachmentDetails);
     });
     const meta = document.createElement('small');
     meta.className = 'hint';
@@ -657,6 +696,9 @@
     parts.push(when(message.platformSentAt || message.createdAt));
     meta.textContent = parts.filter(Boolean).join(' · ');
     left.appendChild(meta);
+
+    const messageDetails = detailsPanel('everything Meta sent about this message', message.platformDetails);
+    if (messageDetails) left.appendChild(messageDetails);
     row.appendChild(left);
 
     const right = document.createElement('div');
