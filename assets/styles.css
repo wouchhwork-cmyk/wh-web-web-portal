@@ -181,3 +181,33 @@ tbody tr:hover { background: #fafbfc; }
 .rl-note { margin-top: 5px; font-size: 12px; }
 .rl-note.bad { color: var(--bad); }
 .muted { color: var(--muted); }
+
+/* --- role editor ------------------------------------------------------ */
+
+.perm-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px 6px;
+  margin: 0 0 14px;
+}
+.perm-group legend { font-weight: 600; padding: 0 6px; }
+.perm-group .hint { margin: 0 0 10px; }
+
+.perm {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.perm:first-of-type { border-top: 0; }
+.perm input { width: auto; margin-top: 3px; flex: 0 0 auto; }
+.perm span { display: block; }
+.perm small { display: block; font-size: 12px; }
+
+/*
+ * A permission the person cannot hand out is dimmed, never hidden. Hiding it
+ * would make a role that already grants it look corrupt in their editor, and
+ * would hide from an owner what they could delegate if they chose to.
+ */
+.perm-off { opacity: 0.55; }

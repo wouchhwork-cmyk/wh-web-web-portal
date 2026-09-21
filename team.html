@@ -69,6 +69,61 @@
       <div id="inviteMessage"></div>
     </div>
 
+    <div class="panel" id="rolesPanel">
+      <h2>Roles</h2>
+      <p class="hint">
+        A role is a <strong>level</strong> plus a set of permissions. You can only create roles
+        <strong>below your own level</strong>, and you can only give a role permissions you hold
+        yourself — so nobody can build a way around their own limits.
+      </p>
+      <p class="hint">
+        Built-in roles cannot be edited. If <em>agent</em> is not quite right for your business,
+        make your own role instead — changing a built-in one would change it for everybody who
+        already has it.
+      </p>
+
+      <table style="margin-top:12px">
+        <thead>
+          <tr><th>Role</th><th>Level</th><th>People</th><th>Permissions</th><th></th></tr>
+        </thead>
+        <tbody id="roleRows"><tr><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+
+      <div class="actions">
+        <button id="newRole">Create a role</button>
+      </div>
+      <div id="rolesMessage"></div>
+
+      <div id="roleEditor" hidden style="margin-top:20px; border-top:1px solid var(--line); padding-top:18px">
+        <h3 id="roleEditorTitle">New role</h3>
+        <div class="row">
+          <div>
+            <label for="roleName">Name</label>
+            <input id="roleName" placeholder="Shift lead" maxlength="50" />
+          </div>
+          <div>
+            <label for="roleLevel">Level</label>
+            <input id="roleLevel" type="number" min="0" max="99" placeholder="40" />
+            <small class="muted" id="roleLevelHint"></small>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="roleDescription">Description</label>
+            <input id="roleDescription" placeholder="What this role is for" maxlength="255" />
+          </div>
+        </div>
+
+        <div id="permissionGroups" style="margin-top:14px"></div>
+
+        <div class="actions">
+          <button id="saveRole">Save role</button>
+          <button class="secondary" id="cancelRole">Cancel</button>
+        </div>
+        <div id="editorMessage"></div>
+      </div>
+    </div>
+
     <div class="panel">
       <h2>Who works here</h2>
       <p class="hint">
@@ -89,5 +144,6 @@
   <script src="config.js"></script>
   <script src="assets/api.js"></script>
   <script src="assets/team.js"></script>
+  <script src="assets/roles.js"></script>
 </body>
 </html>
