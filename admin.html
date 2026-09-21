@@ -60,6 +60,21 @@
       <div id="listMessage"></div>
     </div>
 
+    <div class="panel" id="staffPanel">
+      <h2>Wouchh staff</h2>
+      <p class="hint">
+        Our own people. A <strong>platform admin</strong> has every staff permission over every
+        business and their roles are ignored — that is what the flag means. Anyone else gets
+        <strong>only</strong> what their staff roles grant, which until now could not be granted at
+        all, so they could sign in and reach nothing.
+      </p>
+      <table style="margin-top:12px">
+        <thead><tr><th>Person</th><th>Access</th><th>Roles</th><th>Last seen</th><th></th></tr></thead>
+        <tbody id="staffRows"><tr><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+      <div id="staffMessage"></div>
+    </div>
+
     <div class="panel" id="rateLimitPanel">
       <h2>Meta API rate limits</h2>
       <p class="hint">
@@ -101,5 +116,6 @@
   <script src="assets/api.js"></script>
   <script src="assets/admin.js"></script>
   <script src="assets/rate-limits.js"></script>
+  <script src="assets/staff.js"></script>
 </body>
 </html>
