@@ -38,6 +38,16 @@
   var timer = null;
   var lastLoadedAt = null;
   var tickTimer = null;
+  /*
+   * One request at a time.
+   *
+   * `setInterval` does not wait for the previous call, so a slow response lets
+   * requests stack — and an OLDER answer can then render after a newer one
+   * while `lastLoadedAt` is refreshed, so the screen shows stale figures
+   * labelled "updated just now". On a monitor, a wrong number presented
+   * confidently is worse than a late one.
+   */
+  var inFlight = false;
 
   function text(value) {
     var node = document.createElement('span');
@@ -277,6 +287,8 @@
   }
 
   async function load() {
+    if (inFlight) return;
+    inFlight = true;
     try {
       var result = await window.api.request('/platform/rate-limits');
       message.innerHTML = '';
@@ -295,6 +307,8 @@
         '<span class="code">' +
         text((error && error.message) || 'request failed') +
         '</span></div>';
+    } finally {
+      inFlight = false;
     }
   }
 
@@ -322,13 +336,22 @@
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) {
       stopAuto();
+      // The age ticker goes with it. Polling was deliberately paused, so there
+      // is nothing to re-time once a second on a tab nobody is looking at.
+      if (tickTimer) {
+        clearInterval(tickTimer);
+        tickTimer = null;
+      }
     } else if (auto.checked) {
       void load();
       startAuto();
+      if (!tickTimer) tickTimer = setInterval(showAge, 1000);
     }
   });
 
   tickTimer = setInterval(showAge, 1000);
   void load();
-  startAuto();
+  // Honours the checkbox rather than assuming it ships checked, so the control
+  // and the timer cannot disagree if that default ever changes.
+  if (auto.checked) startAuto();
 })();
