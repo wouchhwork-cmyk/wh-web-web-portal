@@ -103,7 +103,18 @@
     );
   }
 
+  /*
+   * A call that came back with no usage header at all — a timeout, a reset, or
+   * one of the responses Meta documents as carrying none. It is grouped with
+   * the unattributed pools because it belongs to no pool, and it needs its own
+   * wording: it has no Meta id, because Meta never answered.
+   */
+  function isHeaderless(pool) {
+    return pool.meter === 'unknown';
+  }
+
   function poolTitle(pool) {
+    if (isHeaderless(pool)) return 'Calls with no usage header';
     if (pool.channel && pool.channel.name) {
       return pool.channel.name + ' · ' + (pool.product || 'unknown pool');
     }
@@ -112,6 +123,10 @@
   }
 
   function poolSubtitle(pool) {
+    if (isHeaderless(pool)) {
+      return 'Timed out or came back without one — counted, but they tell us nothing about any pool';
+    }
+
     var parts = [];
     if (pool.channel && pool.channel.platform) parts.push(pool.channel.platform);
     parts.push(pool.allowanceFormula);
@@ -265,9 +280,10 @@
     if ((data.unattributed || []).length) {
       html +=
         '<h3 class="rl-heading">Not tied to one business</h3>' +
-        '<p class="hint">Meta named these under an id that is not one of our channels and that ' +
-        'could not be tied to a single business — usually a Meta Business account whose assets ' +
-        'span more than one of our tenants, so the quota really is shared.</p>' +
+        '<p class="hint">Either Meta named these under an id that is not one of our channels — ' +
+        'usually a Meta Business account whose assets span more than one of our tenants, so the ' +
+        'quota really is shared — or the call came back with no usage header at all and belongs ' +
+        'to no pool.</p>' +
         poolTable(data.unattributed);
     }
 
@@ -342,10 +358,18 @@
         clearInterval(tickTimer);
         tickTimer = null;
       }
-    } else if (auto.checked) {
-      void load();
-      startAuto();
+    } else {
+      /*
+       * The ticker restarts whatever the checkbox says. It was inside the
+       * auto-refresh branch, so with auto-refresh OFF, hiding and re-showing
+       * the tab killed "updated Ns ago" permanently — the label froze at
+       * whatever it last said and never moved again.
+       */
       if (!tickTimer) tickTimer = setInterval(showAge, 1000);
+      if (auto.checked) {
+        void load();
+        startAuto();
+      }
     }
   });
 
