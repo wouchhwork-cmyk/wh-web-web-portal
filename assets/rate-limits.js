@@ -64,16 +64,20 @@
   }
 
   /** A pool's window, said the way a person would say it. */
+  /*
+   * Used attributively — "the 24-hour allowance" — so it is hyphenated and
+   * singular. It read "the 24 hours allowance" before.
+   */
   function windowLabel(minutes) {
     if (minutes % 1440 === 0) {
       var days = minutes / 1440;
-      return days === 1 ? '24 hours' : days + ' days';
+      return days === 1 ? '24-hour' : days + '-day';
     }
     if (minutes % 60 === 0) {
       var hours = minutes / 60;
-      return hours === 1 ? 'hour' : hours + ' hours';
+      return hours === 1 ? 'hourly' : hours + '-hour';
     }
-    return minutes + ' min';
+    return minutes + '-minute';
   }
 
   function statusLabel(status) {
@@ -125,10 +129,10 @@
 
   function poolTitle(pool) {
     if (isHeaderless(pool)) return 'Calls with no usage header';
-    if (pool.channel && pool.channel.name) {
-      return pool.channel.name + ' · ' + (pool.product || 'unknown pool');
-    }
-    if (pool.product) return pool.product + ' pool';
+    if (pool.channel && pool.channel.name) return pool.channel.name;
+    // No channel: this is the provider's own business-level pool, which is a
+    // real pool that really throttles and is nobody's single account.
+    if (pool.product) return 'Business-level ' + pool.product + ' pool';
     return pool.scopeKey;
   }
 
@@ -137,12 +141,26 @@
       return 'Timed out or came back without one — counted, but they tell us nothing about any pool';
     }
 
+    /*
+     * EACH TERM IS LABELLED, because two of them are the word "instagram" and
+     * they mean different things. `product` is the PROVIDER's name for the pool;
+     * `channel.platform` is which of our surfaces the channel is. A Facebook
+     * Page really does report against Meta's `instagram` pool once an Instagram
+     * account is linked to it, so "Ai automation · instagram / facebook" read
+     * like a contradiction when it was simply two unlabelled facts.
+     */
     var parts = [];
-    if (pool.channel && pool.channel.platform) parts.push(pool.channel.platform);
-    parts.push(pool.allowanceFormula);
-    if (!pool.channel) {
+    if (pool.channel) {
+      // The title is the channel's name, so the subtitle names the POOL it
+      // meters against and the platform it is — the two facts that differ.
+      if (pool.product) parts.push(pool.product + ' pool');
+      parts.push(pool.allowanceFormula);
+      if (pool.channel.platform) parts.push(pool.channel.platform + ' channel');
+    } else {
+      // The title already says which pool; don't say it twice.
+      parts.push(pool.allowanceFormula);
       // Said plainly, because an unattributed row otherwise looks like a bug.
-      parts.push('Meta id ' + pool.metaBusinessId + ' — not one of our channels');
+      parts.push(pool.provider + ' id ' + pool.providerScopeId + ' — not one of our channels');
     }
     return parts.join(' · ');
   }
@@ -159,6 +177,13 @@
         '<div class="rl-note bad">' +
         number(pool.throttledCallsInWindow) +
         ' call(s) refused in this window.</div>';
+    } else if (pool.failedCallsInWindow > 0) {
+      // Worth saying, and worth distinguishing from a refusal: these did not
+      // cost quota, they just did not work.
+      throttleNote =
+        '<div class="rl-note muted">' +
+        number(pool.failedCallsInWindow) +
+        ' call(s) failed for other reasons.</div>';
     }
 
     var estimate = pool.estimatedAllowanceCalls
@@ -247,6 +272,16 @@
       number(app.throttledCallsInWindow) +
       '</div><small class="muted">' +
       (app.throttledCallsInWindow > 0 ? 'calling again extends the block' : 'none') +
+      '</small></div>' +
+      /*
+       * FAILED IS NOT REFUSED, and hiding it was misleading: a pool reading
+       * "2 calls, 0 refused" looked healthy while both of those calls had
+       * failed for some other reason — a timeout, a dead token, a 500.
+       */
+      '<div class="tile"><div class="k">Failed</div><div class="n">' +
+      number(app.failedCallsInWindow) +
+      '</div><small class="muted">' +
+      (app.failedCallsInWindow > 0 ? 'not rate limits — timeouts, tokens, 5xx' : 'none') +
       '</small></div>';
   }
 
