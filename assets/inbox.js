@@ -331,16 +331,7 @@
      * that returned early: a shared advert's copy is the whole message, and
      * the thread was showing a picture and a url with none of the words.
      */
-    if (attachment.title) {
-      var caption = document.createElement('small');
-      caption.className = 'hint';
-      caption.style.display = 'block';
-      caption.style.whiteSpace = 'pre-wrap';
-      caption.style.maxWidth = '320px';
-      caption.textContent =
-        attachment.title.length > 220 ? attachment.title.slice(0, 220) + '…' : attachment.title;
-      slot.appendChild(caption);
-    }
+    if (attachment.title) slot.appendChild(expandableText(attachment.title));
 
     /*
      * The API says whether this can be SHOWN or only linked. Deriving it from
@@ -538,6 +529,70 @@
     // Falls back to the bare key, then to something that still reads as a
     // sentence — never to "undefined", which is how this class of bug shows up.
     return PLATFORM_NAMES[key] || key || 'the platform';
+  }
+
+
+  /**
+   * Long text with a way to see the rest of it.
+   *
+   * CUT OFF AT 220 CHARACTERS AND THAT WAS THE END OF IT. A shared post's
+   * caption is frequently the entire message — a carousel arriving on live
+   * traffic carried about a thousand characters, of which an agent could read
+   * the first fifth and never the ask buried at the bottom. The ellipsis looked
+   * deliberate, which made it worse: nothing suggested there was more, so
+   * nobody thought to go and look on the platform.
+   *
+   * Collapsed by default, because a thread of full captions is unreadable in a
+   * different way. The control appears ONLY when there is something hidden, so
+   * a short caption gains no furniture.
+   */
+  var CAPTION_PREVIEW_CHARS = 220;
+
+  function expandableText(text) {
+    var wrap = document.createElement('div');
+
+    var body = document.createElement('small');
+    body.className = 'hint';
+    body.style.display = 'block';
+    body.style.whiteSpace = 'pre-wrap';
+    body.style.maxWidth = '320px';
+    wrap.appendChild(body);
+
+    if (text.length <= CAPTION_PREVIEW_CHARS) {
+      // Short enough to simply show. No toggle, no ellipsis.
+      body.textContent = text;
+      return wrap;
+    }
+
+    /*
+     * A real <button>, not a styled span: this is keyboard-reachable and
+     * announces itself, and the captions most worth expanding are the ones
+     * somebody is reading carefully.
+     */
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'secondary';
+    toggle.style.cssText =
+      'display:block;margin-top:2px;padding:0;border:0;background:none;' +
+      'font-size:11px;text-decoration:underline;cursor:pointer;opacity:0.8';
+
+    var expanded = false;
+    var render = function () {
+      // textContent throughout: this is somebody else's caption, and it reaches
+      // the page as words rather than as markup.
+      body.textContent = expanded ? text : text.slice(0, CAPTION_PREVIEW_CHARS) + '…';
+      toggle.textContent = expanded ? 'Show less' : 'Show more';
+      toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    };
+
+    toggle.addEventListener('click', function () {
+      expanded = !expanded;
+      render();
+    });
+
+    render();
+    wrap.appendChild(toggle);
+    return wrap;
   }
 
   function messageRow(message) {
