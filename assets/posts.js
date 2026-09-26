@@ -47,6 +47,29 @@
   function thumbnail(post) {
     if (!post.media || !post.media.url) return null;
 
+    /*
+     * DON'T REQUEST A LINK WE KNOW IS DEAD.
+     *
+     * These urls are signed and last about four days, and the server now says
+     * so — `expired` is read from the url's own `oe` rather than guessed. Before
+     * this the browser fetched it anyway, got a 403 and fired the error handler
+     * below, which is a wasted request per post per render and, on a feed that
+     * has gone stale, a wasted request per post on every single load.
+     *
+     * A small placeholder rather than nothing: an empty space reads as a post
+     * with no picture, which is a different thing from one whose preview has
+     * aged out and is still there on the platform.
+     */
+    if (post.media.expired) {
+      const gone = document.createElement('span');
+      gone.textContent = '▦';
+      gone.title = 'preview link has expired — open the post to see it';
+      gone.style.cssText =
+        'width:56px;height:56px;margin-right:10px;border-radius:6px;display:inline-flex;' +
+        'align-items:center;justify-content:center;opacity:0.35;border:1px solid currentColor';
+      return gone;
+    }
+
     const image = document.createElement('img');
     image.src = post.media.url;
     image.alt = '';
