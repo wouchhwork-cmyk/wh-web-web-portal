@@ -1011,6 +1011,47 @@
       return note;
     }
 
+    /*
+     * THE REST OF A CAROUSEL, after the cover.
+     *
+     * `previewUrl` on a CAROUSEL_ALBUM is one image out of however many, so a
+     * mention on a ten-slide post read as a mention on a single photo. The
+     * server sends every slide; this draws the ones the cover is hiding.
+     */
+    function carouselStrip() {
+      var slides = context.carousel || [];
+      if (slides.length < 2) return null;
+
+      var wrap = document.createElement('div');
+      var label = document.createElement('small');
+      label.className = 'muted';
+      label.style.display = 'block';
+      label.textContent = slides.length + ' images in this post';
+      wrap.appendChild(label);
+
+      var strip = document.createElement('div');
+      strip.style.cssText =
+        'display:flex;gap:6px;overflow-x:auto;margin-top:4px;padding-bottom:4px';
+      slides.slice(1).forEach(function (slide) {
+        var url = slide.previewUrl || slide.mediaUrl;
+        if (!url) return;
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.style.cssText =
+          'width:56px;height:56px;object-fit:cover;border-radius:6px;flex:0 0 auto';
+        // Signed links expire; drop a dead slide rather than leave a broken
+        // tile sitting between working ones.
+        img.onerror = function () { img.remove(); };
+        strip.appendChild(img);
+      });
+
+      if (!strip.children.length) return null;
+      wrap.appendChild(strip);
+      return wrap;
+    }
+
     function still() {
       var img = document.createElement('img');
       img.src = context.previewUrl || context.mediaUrl;
@@ -1038,6 +1079,8 @@
       card.appendChild(video);
     } else if (context.previewUrl || context.mediaUrl) {
       card.appendChild(still());
+      var strip = carouselStrip();
+      if (strip) card.appendChild(strip);
       // Meta sometimes omits media_url on a reel and sends the thumbnail
       // anyway, so a still with no player is correct rather than broken.
       if (context.mediaType === 'VIDEO') {

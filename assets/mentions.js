@@ -224,7 +224,52 @@
     }
 
     /** The thumbnail, or a way through to the post when even that has expired. */
-    function stillPreview() {
+    /*
+   * THE REST OF A CAROUSEL.
+   *
+   * `previewUrl` is the cover, and on a CAROUSEL_ALBUM that is one image out of
+   * however many — so a mention on a ten-slide post looked like a mention on a
+   * single photo, with nothing saying otherwise. The server sends every slide;
+   * this draws the ones after the first.
+   *
+   * Empty for an ordinary post, so this is a no-op on the common case.
+   */
+  function appendCarousel(panel, context) {
+    var slides = context.carousel || [];
+    if (slides.length < 2) return;
+
+    var strip = document.createElement('div');
+    strip.style.cssText =
+      'display:flex;gap:6px;overflow-x:auto;margin-top:6px;padding-bottom:4px';
+
+    // From the second: the first IS the cover already shown above it.
+    slides.slice(1).forEach(function (slide) {
+      var url = slide.previewUrl || slide.mediaUrl;
+      if (!url) return;
+      var img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.style.cssText =
+        'width:64px;height:64px;object-fit:cover;border-radius:6px;flex:0 0 auto';
+      // These are signed links that expire; a dead slide is dropped rather than
+      // left as a broken tile beside working ones.
+      img.onerror = function () { img.remove(); };
+      strip.appendChild(img);
+    });
+
+    if (!strip.children.length) return;
+
+    var label = document.createElement('small');
+    label.className = 'muted';
+    label.style.display = 'block';
+    label.style.marginTop = '6px';
+    label.textContent = slides.length + ' images in this post';
+    panel.appendChild(label);
+    panel.appendChild(strip);
+  }
+
+  function stillPreview() {
       var image = document.createElement('img');
       image.src = context.previewUrl;
       image.alt = '';
@@ -276,6 +321,7 @@
       panel.appendChild(video);
     } else if (context.previewUrl) {
       panel.appendChild(stillPreview());
+      appendCarousel(panel, context);
 
       /*
        * SAY WHY THERE IS NO PLAY BUTTON.
