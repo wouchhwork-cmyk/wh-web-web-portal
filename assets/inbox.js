@@ -306,8 +306,40 @@
     wrap.appendChild(slot);
 
     if (!attachment.url) {
-      slot.textContent = '(' + (attachment.mediaKind || 'attachment') + ', no link)';
+      /*
+       * NOTHING IN THE BOX. Meta named an attachment and sent no payload for
+       * it — a shared COMMENT arrives exactly like this, as an empty `template`
+       * — so there is no link, no caption and no media.
+       *
+       * It said "(document, no link)" before, which is our internal bucket for
+       * the shape and tells an agent nothing about what the customer sent. The
+       * caption above still renders when there is one; this is the last resort.
+       */
+      slot.textContent = attachment.title
+        ? ''
+        : 'the platform sent no content for this — open the chat in ' + platformName() + ' to see it';
+      slot.style.fontStyle = 'italic';
+      slot.style.opacity = '0.75';
       return wrap;
+    }
+
+    /*
+     * ABOVE THE BRANCHES, because two of them return.
+     *
+     * This sat after the link and video branches, so only an IMAGE ever
+     * showed a caption — and the caption matters most on exactly the ones
+     * that returned early: a shared advert's copy is the whole message, and
+     * the thread was showing a picture and a url with none of the words.
+     */
+    if (attachment.title) {
+      var caption = document.createElement('small');
+      caption.className = 'hint';
+      caption.style.display = 'block';
+      caption.style.whiteSpace = 'pre-wrap';
+      caption.style.maxWidth = '320px';
+      caption.textContent =
+        attachment.title.length > 220 ? attachment.title.slice(0, 220) + '…' : attachment.title;
+      slot.appendChild(caption);
     }
 
     /*
@@ -357,10 +389,16 @@
        * a share is that the url is an instagram.com page, and that is true
        * whatever Meta decides to call it next.
        */
-      var SHARE_TYPES = ['share', 'ig_reel', 'ig_post'];
-      var isShare =
-        SHARE_TYPES.indexOf(attachment.platformType) !== -1 ||
-        (attachment.url || '').indexOf('instagram.com/') !== -1;
+      /*
+       * A CARD, not a bare link — but only for something that really is a page.
+       *
+       * The label was enough to force this card, which was wrong in the
+       * direction that hurts: a shared ADVERT is labelled `ig_post` and carries
+       * a CDN image, so it was drawn as a card containing a 400-character
+       * signed url instead of the advert itself. The server now decides
+       * renderability from the url, and this agrees with it.
+       */
+      var isShare = (attachment.url || '').indexOf('instagram.com/') !== -1;
       var isReel = isShare && (attachment.url || '').indexOf('/reel/') !== -1;
 
       var link = document.createElement('a');
@@ -397,6 +435,10 @@
          * The URL itself, under the label. An agent about to open a link
          * somebody else sent them should be able to see where it goes first —
          * and it also says which reel, when the same thread carries several.
+         *
+         * Only a real permalink, though. This branch used to be reached by
+         * CDN-backed shares too, and printing a 400-character signed blob
+         * teaches nobody anything about where they are going.
          */
         var href = document.createElement('small');
         href.textContent = attachment.url;
@@ -409,7 +451,9 @@
 
         link.appendChild(card);
       } else {
-        link.textContent = attachment.platformType || 'attachment';
+        // Meta's own word for the shape, which is not something to show an
+        // agent — "template" describes the envelope, never the content.
+        link.textContent = attachment.title || 'open attachment';
       }
 
       slot.appendChild(link);
@@ -422,21 +466,6 @@
     }
 
     // image, gif, sticker — and a story mention, which may be either.
-    /*
-     * A SHARED POST's caption. For a shared advert the caption is most of the
-     * message — without it the thread shows a picture and no hint of what was
-     * sent or why.
-     */
-    if (attachment.title) {
-      var caption = document.createElement('small');
-      caption.className = 'hint';
-      caption.style.display = 'block';
-      caption.style.whiteSpace = 'pre-wrap';
-      caption.style.maxWidth = '320px';
-      caption.textContent =
-        attachment.title.length > 220 ? attachment.title.slice(0, 220) + '…' : attachment.title;
-      slot.appendChild(caption);
-    }
 
     var image = document.createElement('img');
     image.src = attachment.url;
@@ -487,6 +516,28 @@
       ? 'this ' + (attachment.mediaKind || 'attachment') + ' is no longer available on the platform'
       : 'this ' + (attachment.mediaKind || 'attachment') + ' could not be loaded';
     return note;
+  }
+
+  /*
+   * The platform's own name, for the times we have to send somebody to it.
+   *
+   * Hardcoded as "Instagram" in two places before this, which was true of every
+   * thread anybody had looked at and not true of the product: the same webhook
+   * shapes arrive for a Facebook Page, and telling an agent to go and check
+   * Instagram for a Messenger thread sends them somewhere the message is not.
+   */
+  const PLATFORM_NAMES = {
+    instagram: 'Instagram',
+    facebook: 'Facebook',
+    messenger: 'Messenger',
+    whatsapp: 'WhatsApp',
+  };
+
+  function platformName() {
+    const key = openConversation && openConversation.platform;
+    // Falls back to the bare key, then to something that still reads as a
+    // sentence — never to "undefined", which is how this class of bug shows up.
+    return PLATFORM_NAMES[key] || key || 'the platform';
   }
 
   function messageRow(message) {
@@ -610,7 +661,18 @@
      * message, which is the one thing that did not happen.
      */
     if (message.contentUnavailable) {
-      body.textContent = 'sent something Instagram will not show us';
+      /*
+       * SAY WHAT TO DO, not only what went wrong.
+       *
+       * This read "sent something Instagram will not show us", which is
+       * accurate and leaves the agent stuck: the content genuinely exists, it
+       * is simply not in any API response, so the only way to see it is to open
+       * the thread on the platform. Confirmed again on 26 Sep with a shared
+       * PROFILE — Meta sent is_unsupported: true and nothing else at all: no
+       * username, no id, no thumbnail, no link.
+       */
+      body.textContent =
+        'Unsupported message — open this chat in ' + platformName() + ' to see it';
       body.style.fontStyle = 'italic';
       body.style.opacity = '0.75';
     } else if (message.platformSentNoText) {
@@ -623,7 +685,8 @@
        * underneath asking about it read as a non-sequitur, which is exactly how
        * it turned up on live traffic.
        */
-      body.textContent = 'a photo or GIF — Instagram gives us no media for a comment';
+      body.textContent =
+        'a photo or GIF — ' + platformName() + ' gives us no media for a comment';
       body.style.fontStyle = 'italic';
       body.style.opacity = '0.75';
     } else {
@@ -1172,6 +1235,17 @@
         permissions.indexOf('conversations.manage') !== -1;
 
       if (!older) messages.innerHTML = '';
+      /*
+       * BEFORE ANYTHING IS DRAWN, because the rendering reads it.
+       *
+       * This was set after the message loop, which made `platformName()` fall
+       * back to the word "the platform" on a freshly opened thread — and worse
+       * on the second one, where it still held the PREVIOUS conversation and
+       * could confidently name the wrong network. Nothing above this line
+       * renders, so it is the right place for it.
+       */
+      openConversation = conversation;
+
       // The tagged post sits above the thread, not inside it: it is what the
       // whole conversation is ABOUT, not one message in it.
       if (!older) renderMentionContext(conversation);
@@ -1187,7 +1261,6 @@
       threadCursor = pagination.nextCursor || null;
       document.getElementById('loadOlder').hidden = !pagination.hasMore;
 
-      openConversation = conversation;
       renderThreadControls(conversation);
 
       /*
