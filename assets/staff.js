@@ -70,6 +70,24 @@
           (person.hasAllEnterpriseAccess
             ? ''
             : '<button class="secondary" data-save="' + escape(person.refId) + '">Save</button>') +
+          /*
+           * SUSPEND IS OFFERED ON EVERYBODY, admins included: the server
+           * refuses the two cases that matter — acting on yourself, and
+           * suspending the last platform admin — and refusing in one place
+           * beats a button that is hidden here and reachable by curl.
+           *
+           * REINSTATE IS NOT OFFERED on an invitation that was never accepted.
+           * The server refuses that too, because activating somebody is a claim
+           * about what they agreed to and only they can make it; showing the
+           * control anyway would just produce a confusing error.
+           */
+          (person.status === 'suspended'
+            ? (person.everAccepted === false
+                ? ' <small class="muted">invitation cancelled</small>'
+                : ' <button class="secondary" data-status="active" data-ref="' +
+                  escape(person.refId) + '">Reinstate</button>')
+            : ' <button class="secondary" data-status="suspended" data-ref="' +
+              escape(person.refId) + '">Suspend</button>') +
           '</td></tr>'
         );
       })
@@ -78,6 +96,12 @@
     Array.prototype.forEach.call(rows.querySelectorAll('[data-save]'), function (button) {
       button.addEventListener('click', function () {
         void save(button.getAttribute('data-save'));
+      });
+    });
+
+    Array.prototype.forEach.call(rows.querySelectorAll('[data-status]'), function (button) {
+      button.addEventListener('click', function () {
+        void setStatus(button.getAttribute('data-ref'), button.getAttribute('data-status'));
       });
     });
   }
@@ -99,6 +123,79 @@
     }
   }
 
+  async function setStatus(refId, status) {
+    /*
+     * A reason is REQUIRED for a suspension and the server enforces it, so it
+     * is asked for here rather than sent as a placeholder — this ends every
+     * session that person holds, and the audit row is the only record of why.
+     */
+    var body = { status: status };
+    if (status === 'suspended') {
+      var reason = window.prompt('Why are you suspending them? This is recorded.');
+      if (!reason) return;
+      body.reason = reason;
+    }
+
+    try {
+      await window.api.request('/platform/staff/' + refId + '/status', {
+        method: 'POST',
+        body: body,
+      });
+      await load();
+      show('ok', status === 'suspended' ? 'Suspended, and signed out.' : 'Reinstated.');
+    } catch (error) {
+      show('error', (error && error.message) || 'Could not change that.');
+    }
+  }
+
+  function renderInviteRoles() {
+    var box = document.getElementById('inviteRoles');
+    if (!box) return;
+    box.innerHTML = options.length
+      ? '<small class="muted">Roles (optional — can be granted later)</small><br />' +
+        options
+          .map(function (option) {
+            return (
+              '<label class="perm" style="border:0;padding:2px 8px 2px 0;display:inline-flex">' +
+              '<input type="checkbox" data-invite-role value="' + escape(option.refId) + '" />' +
+              '<span>' + escape(option.name) + '</span></label>'
+            );
+          })
+          .join('')
+      : '<small class="muted">No staff roles defined yet.</small>';
+  }
+
+  async function sendInvite() {
+    var first = (document.getElementById('inviteFirst').value || '').trim();
+    var last = (document.getElementById('inviteLast').value || '').trim();
+    var email = (document.getElementById('inviteEmail').value || '').trim();
+
+    // Checked here only to save a round trip; the server validates regardless.
+    if (!first || !email) {
+      show('error', 'A first name and an email address are both needed.');
+      return;
+    }
+
+    var roleRefIds = Array.prototype.slice
+      .call(document.querySelectorAll('#inviteRoles input[data-invite-role]:checked'))
+      .map(function (box) { return box.value; });
+
+    var body = { firstName: first, email: email };
+    if (last) body.lastName = last;
+    if (roleRefIds.length) body.roleRefIds = roleRefIds;
+
+    try {
+      await window.api.request('/platform/staff', { method: 'POST', body: body });
+      document.getElementById('inviteFirst').value = '';
+      document.getElementById('inviteLast').value = '';
+      document.getElementById('inviteEmail').value = '';
+      await load();
+      show('ok', 'Invitation sent. They appear as invited until they accept.');
+    } catch (error) {
+      show('error', (error && error.message) || 'Could not send that invitation.');
+    }
+  }
+
   async function load() {
     try {
       var results = await Promise.all([
@@ -108,9 +205,17 @@
       options = results[1].data || [];
       message.innerHTML = '';
       render(results[0].data || []);
+      renderInviteRoles();
     } catch (_) {
       document.getElementById('staffPanel').hidden = true;
     }
+  }
+
+  var inviteButton = document.getElementById('inviteSend');
+  if (inviteButton) {
+    inviteButton.addEventListener('click', function () {
+      void sendInvite();
+    });
   }
 
   void load();
