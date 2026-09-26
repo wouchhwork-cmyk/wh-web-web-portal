@@ -113,6 +113,16 @@
     return pool.meter === 'unknown';
   }
 
+  /*
+   * The provider is shown on every pool because the table holds more than one.
+   * `meta` is the only one today; a row that did not say whose quota it was
+   * would become ambiguous the moment a second appears, and by then the screen
+   * is somebody's habit.
+   */
+  function providerTag(pool) {
+    return '<span class="pill none">' + text(pool.provider) + '</span> ';
+  }
+
   function poolTitle(pool) {
     if (isHeaderless(pool)) return 'Calls with no usage header';
     if (pool.channel && pool.channel.name) {
@@ -159,7 +169,9 @@
 
     return (
       '<tr>' +
-      '<td><strong>' +
+      '<td>' +
+      providerTag(pool) +
+      '<strong>' +
       text(poolTitle(pool)) +
       '</strong><br /><small class="muted">' +
       text(poolSubtitle(pool)) +
