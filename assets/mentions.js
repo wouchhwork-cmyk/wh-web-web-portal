@@ -345,6 +345,25 @@
       var kind = context.productType === 'REELS' ? 'Reel' : 'Post';
       panel.appendChild(text('p', kind + ' by @' + context.ownerUsername));
     }
+
+    /*
+     * HOW they tagged us, because the three are not the same thing.
+     *
+     * A `tagged` — collaborator or photo tag — sends NO webhook: it is found
+     * only when the mentions backfill walks /tags, so it can appear hours after
+     * the post went up. An agent who is not told that reads the delay as the
+     * inbox being slow. The other two arrive in seconds.
+     */
+    var HOW_TAGGED = {
+      caption: 'tagged you in the caption',
+      comment: 'tagged you in a comment',
+      tagged: 'tagged you in the post itself — no notification is sent for these',
+    };
+    if (HOW_TAGGED[context.mentionKind]) {
+      var how = text('p', HOW_TAGGED[context.mentionKind]);
+      how.className = 'hint';
+      panel.appendChild(how);
+    }
     if (context.caption) {
       var caption = text('p', context.caption);
       caption.style.whiteSpace = 'pre-wrap';
