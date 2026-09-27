@@ -772,6 +772,44 @@
       left.appendChild(unsent);
     }
 
+    var facts = message.platformDetails || {};
+
+    /*
+     * THE CUSTOMER TAPPED SOMETHING rather than typing it.
+     *
+     * The body is the words on the button, which is right — that is the
+     * customer's side of the exchange, and an agent should read "See menu", not
+     * MENU_V2_EN. But a tap and a sentence are different acts: one is a choice
+     * from what we offered, the other is a person writing to us, and replying
+     * to the first as though it were the second reads badly.
+     */
+    if (facts.isPostback || facts.quickReplyPayload) {
+      var tapped = document.createElement('small');
+      tapped.className = 'hint';
+      tapped.style.display = 'block';
+      tapped.textContent = facts.isPostback ? 'tapped a button' : 'chose a quick reply';
+      left.appendChild(tapped);
+    }
+
+    /*
+     * HOW THEY GOT HERE. Meta tells us when a conversation started from an ad
+     * or a referral link, and we have always stored it and never shown it —
+     * which made it useless. An agent who knows the customer arrived from a
+     * specific ad is answering a different question from one who does not.
+     */
+    if (facts.referral && typeof facts.referral === 'object') {
+      var from = document.createElement('small');
+      from.className = 'hint';
+      from.style.display = 'block';
+      var referralParts = [];
+      if (facts.referral.source) referralParts.push(String(facts.referral.source).toLowerCase());
+      if (facts.referral.ad_id) referralParts.push('ad ' + facts.referral.ad_id);
+      if (facts.referral.ref) referralParts.push('ref ' + facts.referral.ref);
+      from.textContent =
+        'arrived from ' + (referralParts.length ? referralParts.join(' · ') : 'a referral');
+      left.appendChild(from);
+    }
+
     /*
      * The customer's emoji on this message. Shown ON the message, because that
      * is what it is: a reaction is a property of a message, not a line in the
@@ -840,6 +878,34 @@
      * but the platform id is what matters and both have one, so the control is
      * offered on anything the platform can act on.
      */
+    /*
+     * THE INBOX AND INSTAGRAM DISAGREE, and saying so is the whole point.
+     *
+     * Hiding and deleting are marked here optimistically, so a send that died
+     * leaves the comment public while this thread shows it as gone. Without
+     * this line an agent reads "hidden", believes it, and the comment stays up.
+     */
+    if (message.moderationFailed) {
+      var stuck = document.createElement('small');
+      stuck.className = 'hint';
+      stuck.style.display = 'block';
+      stuck.style.color = '#b45309';
+      stuck.textContent =
+        'This did not reach Instagram — the comment is still visible there.';
+      left.appendChild(stuck);
+    }
+
+    if (openCanModerate && message.moderationFailed) {
+      var again = document.createElement('button');
+      again.className = 'secondary';
+      again.style.marginLeft = '8px';
+      again.textContent = 'Send again';
+      again.addEventListener('click', function () {
+        void retryModeration(message);
+      });
+      right.appendChild(again);
+    }
+
     if (openCanModerate && message.canBeRepliedTo) {
       var hide = document.createElement('button');
       hide.className = 'secondary';
@@ -1416,6 +1482,33 @@
    * Instagram sends no webhook when a comment is hidden or deleted, so nothing
    * would ever tell us.
    */
+  /*
+   * Sends a hide or delete again after the first one died.
+   *
+   * NOT the same call as moderate. Our copy already reads hidden — the mark is
+   * optimistic, because Instagram sends no webhook for either action — so the
+   * ordinary path is refused from here on, correctly. This replays the failed
+   * ledger row instead, which is also why pressing it twice cannot produce two
+   * calls to Instagram.
+   */
+  async function retryModeration(message) {
+    if (!openRefId) return;
+    try {
+      await window.api.request(
+        '/conversations/' +
+          encodeURIComponent(openRefId) +
+          '/messages/' +
+          encodeURIComponent(message.refId) +
+          '/moderate/retry',
+        { method: 'POST' },
+      );
+      await openThread(openRefId);
+      show(threadMessage, 'success', 'Sending to Instagram again.');
+    } catch (error) {
+      handle(error, threadMessage);
+    }
+  }
+
   async function moderate(message, action) {
     if (!openRefId) return;
     try {
