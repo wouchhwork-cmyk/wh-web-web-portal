@@ -97,7 +97,7 @@
       const data = (await window.api.request('/connections')).data;
       rows.innerHTML = '';
       if (data.length === 0) {
-        rows.innerHTML = '<tr><td colspan="4">Nothing connected yet.</td></tr>';
+        rows.innerHTML = '<tr><td colspan="5">Nothing connected yet.</td></tr>';
         return;
       }
       data.forEach(function (connection) {
@@ -130,10 +130,65 @@
           }
           tr.appendChild(td);
         });
+
+        /*
+         * DISCONNECT, offered only while there is something to disconnect.
+         *
+         * Until this existed a business could connect a Page and never release
+         * it — and because one Page may be held by one connection, a business
+         * that had lost its original Facebook login was locked out of its own
+         * account with no way back.
+         *
+         * The confirmation spells out both halves, because "disconnect" reads
+         * like "delete" and is not: the history stays, the authority goes.
+         */
+        const action = document.createElement('td');
+        if (connection.status !== 'revoked') {
+          const drop = document.createElement('button');
+          drop.className = 'secondary';
+          drop.textContent = 'Disconnect';
+          drop.addEventListener('click', function () {
+            if (
+              !window.confirm(
+                'Disconnect this account?\n\n' +
+                  'We will stop receiving its messages and will not send, sync or act for it ' +
+                  'again.\n\nEverything already in your inbox stays — conversations, messages ' +
+                  'and customers are all kept. You can reconnect the same account later.',
+              )
+            ) {
+              return;
+            }
+            void disconnect(connection.refId, drop);
+          });
+          action.appendChild(drop);
+        }
+        tr.appendChild(action);
+
         rows.appendChild(tr);
       });
     } catch (error) {
       rows.innerHTML = '';
+      handle(error, listMessage);
+    }
+  }
+
+  /*
+   * Disconnecting touches Meta before it writes, so it is not instant. The
+   * button is disabled while it runs rather than left clickable — a second
+   * click would be a second unsubscribe against a token the first one is
+   * clearing.
+   */
+  async function disconnect(refId, button) {
+    button.disabled = true;
+    try {
+      await window.api.request('/connections/' + encodeURIComponent(refId) + '/disconnect', {
+        method: 'POST',
+      });
+      show(listMessage, 'success', 'Disconnected. Your conversations and messages are unchanged.');
+      await loadConnections();
+      await loadChannels();
+    } catch (error) {
+      button.disabled = false;
       handle(error, listMessage);
     }
   }
