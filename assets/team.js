@@ -63,12 +63,32 @@
       const roles = (await window.api.request('/employees/roles')).data;
       const select = document.getElementById('role');
       select.innerHTML = '';
+      /*
+       * SHOWN BUT DISABLED when this person cannot grant it.
+       *
+       * The form used to offer every role and let the server refuse on submit,
+       * which is a poor moment to find out: a colleague and a role have
+       * already been chosen. Assignability is a fact about the CALLER — a
+       * manager may grant `agent` and not `manager` — so the server now says
+       * which is which.
+       *
+       * Disabled rather than omitted. Hiding `manager` would tell a manager
+       * the role does not exist, instead of that it is not theirs to give.
+       */
       roles.forEach(function (role) {
         const option = document.createElement('option');
         option.value = role.refId;
-        option.textContent = role.name;
+        option.textContent = role.assignable === false ? role.name + ' — not yours to grant' : role.name;
+        option.disabled = role.assignable === false;
         select.appendChild(option);
       });
+
+      // Land on something selectable, rather than on a disabled first option
+      // that cannot be submitted and gives no reason why.
+      const firstGrantable = roles.find(function (role) {
+        return role.assignable !== false;
+      });
+      if (firstGrantable) select.value = firstGrantable.refId;
     } catch (error) {
       handle(error, inviteMessage);
     }
