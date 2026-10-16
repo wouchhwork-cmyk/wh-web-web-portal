@@ -340,6 +340,22 @@
         'anything talks to Meta — an inbox refresh, a backfill, or a new connection.</p>';
     }
 
+    /*
+     * SAID OUT LOUD WHEN THE LIST IS INCOMPLETE.
+     *
+     * The listing is ordered by usage, so the pools that fall off the cap are
+     * the QUIET ones — and on this screen a quiet pool and a missing pool look
+     * exactly the same. Somebody checking whether a business is being
+     * throttled would otherwise read "not listed" as "fine", which is the one
+     * conclusion this page must never invite.
+     */
+    if (data.truncated) {
+      html +=
+        '<p class="hint">There are more pools than this page shows. The busiest are listed ' +
+        'first, so anything missing was quiet when this was taken — but it was left out, not ' +
+        'found to be idle.</p>';
+    }
+
     body.innerHTML = html;
   }
 
