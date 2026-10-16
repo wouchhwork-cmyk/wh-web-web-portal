@@ -144,7 +144,7 @@
       const data = (await window.api.request('/connections/channels')).data;
       rows.innerHTML = '';
       if (data.length === 0) {
-        rows.innerHTML = '<tr><td colspan="5">No channels yet.</td></tr>';
+        rows.innerHTML = '<tr><td colspan="6">No channels yet.</td></tr>';
         return;
       }
 
@@ -156,8 +156,28 @@
       data.forEach(function (channel) {
         const tr = document.createElement('tr');
 
+        var profile = channel.profile || {};
+
+        /*
+         * THE PICTURE, where Meta gave us one. Instagram's expires — the link
+         * carries its own `oe=` deadline — so a broken image is expected rather
+         * than a bug, and it is hidden instead of showing the browser's torn
+         * icon next to a business's own name.
+         */
         const name = document.createElement('td');
         name.innerHTML = '<strong></strong><br><small></small>';
+        if (profile.pictureUrl) {
+          var avatar = document.createElement('img');
+          avatar.src = profile.pictureUrl;
+          avatar.alt = '';
+          avatar.width = 32;
+          avatar.height = 32;
+          avatar.style.cssText = 'border-radius:50%;vertical-align:middle;margin-right:8px';
+          avatar.addEventListener('error', function () {
+            avatar.remove();
+          });
+          name.insertBefore(avatar, name.firstChild);
+        }
         name.querySelector('strong').textContent = channel.name || '(unnamed)';
         name.querySelector('small').textContent = channel.username ? '@' + channel.username : '';
 
@@ -171,6 +191,58 @@
         parent.textContent = channel.parentChannelRefId
           ? nameByRefId[channel.parentChannelRefId] || '—'
           : '—';
+
+        /*
+         * WHAT META SAYS THIS ACCOUNT IS, which the daily refresh has been
+         * collecting since the capability sweep and which nothing ever showed.
+         * A figure captured and never rendered is worth what one never
+         * captured is worth.
+         *
+         * Counts are checked against null, not truthiness: zero followers is a
+         * real answer and must not read as "we do not know".
+         */
+        const profileCell = document.createElement('td');
+        var facts = [];
+        if (profile.followerCount !== null && profile.followerCount !== undefined) {
+          facts.push(profile.followerCount.toLocaleString() + ' followers');
+        }
+        if (profile.postCount !== null && profile.postCount !== undefined) {
+          facts.push(profile.postCount.toLocaleString() + ' posts');
+        }
+        if (profile.category) facts.push(profile.category);
+        if (profile.ratingCount) {
+          facts.push(profile.starRating + '\u2605 from ' + profile.ratingCount);
+        }
+        if (profile.verificationStatus === 'blue_verified') facts.push('verified');
+
+        if (facts.length === 0) {
+          /*
+           * Never synced and nothing synced are different facts. Saying which
+           * stops somebody reconnecting a channel to fix an empty cell that
+           * only means the refresh has not run yet.
+           */
+          var none = document.createElement('small');
+          none.className = 'hint';
+          none.textContent = profile.syncedAt ? 'nothing reported' : 'not refreshed yet';
+          profileCell.appendChild(none);
+        } else {
+          facts.forEach(function (fact) {
+            var line = document.createElement('small');
+            line.style.display = 'block';
+            line.textContent = fact;
+            profileCell.appendChild(line);
+          });
+        }
+
+        if (profile.link) {
+          var open = document.createElement('a');
+          open.href = profile.link;
+          open.target = '_blank';
+          open.rel = 'noopener noreferrer';
+          open.textContent = 'Open on the platform';
+          open.style.cssText = 'display:block;font-size:12px;margin-top:4px';
+          profileCell.appendChild(open);
+        }
 
         const status = document.createElement('td');
         status.appendChild(pill(channel.status));
@@ -187,7 +259,7 @@
           status.appendChild(note);
         }
 
-        [name, platform, kind, parent, status].forEach(function (cell) {
+        [name, platform, kind, parent, profileCell, status].forEach(function (cell) {
           tr.appendChild(cell);
         });
         rows.appendChild(tr);

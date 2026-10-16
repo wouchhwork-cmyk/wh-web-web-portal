@@ -1459,6 +1459,28 @@
         note.disabled = false;
         body.placeholder = 'Type a reply…';
         send.textContent = 'Send';
+
+        /*
+         * A REPLY TO A MENTION CANNOT BE UNSENT.
+         *
+         * Instagram lets a comment be deleted only by the owner of the media it
+         * sits on — explicitly even when we wrote it — so a reply we post on
+         * somebody else's post is permanent from our side. It cannot even be
+         * read back by id (platform-limitations 1.8, 4.6). One we had to remove
+         * during testing had to be deleted by hand, from the app.
+         *
+         * Said BEFORE the agent types, because afterwards there is nothing
+         * anyone can do about it. The composer is not blocked — replying is the
+         * whole point of the thread — so this is a warning, not a refusal.
+         */
+        if (conversation.conversationKind === 'mention') {
+          show(
+            threadMessage,
+            'info',
+            'This reply is posted on someone else\u2019s post. Instagram does not let us ' +
+              'delete it afterwards \u2014 only the post\u2019s owner can.',
+          );
+        }
       }
 
       // Reading a thread marks it read; failing that is not worth an error.
