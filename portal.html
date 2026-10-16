@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Your business · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <button class="secondary" id="signOut" style="margin-left:10px">Sign out</button>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel" id="state"><p class="hint">Loading…</p></div>
+    <div class="panel" id="featuresPanel" hidden>
+      <h2>Your plan</h2>
+      <p class="hint">
+        What this business has, and what it could have. Asking puts a request in front of the
+        Wouchh team — it does not turn anything on.
+      </p>
+      <div id="featureRows"></div>
+      <div id="featuresMessage"></div>
+    </div>
+
+    <div class="panel" id="links" hidden>
+      <h2>Your business</h2>
+      <p class="hint">What you can manage today.</p>
+      <a href="inbox.html" id="linkInbox" hidden>Inbox</a>
+      <a href="mentions.html" id="linkMentions" hidden>Mentions</a>
+      <a href="posts.html" id="linkPosts" hidden>Posts</a>
+      <a href="customers.html" id="linkCustomers" hidden>Customers</a>
+      <a href="team.html" id="linkTeam" hidden>Your team</a>
+      <a href="connections.html" id="linkConnections" hidden>Connected accounts</a>
+      <span id="noLinks" class="hint" hidden>
+        Nothing to manage yet — ask an owner for more access.
+      </span>
+    </div>
+    <div class="panel" id="permissions" hidden></div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/portal.js"></script>
+  <script src="assets/features.js"></script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inbox · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:10px">Back</a>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel">
+      <h2>Inbox</h2>
+      <p class="hint">
+        Direct messages, comment threads and mentions from every connected account, newest first.
+      </p>
+      <div class="actions">
+        <label for="statusFilter" class="hint">Status</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+          <option value="open" selected>Open</option>
+          <option value="pending">Pending</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <label for="mineOnly" class="hint" style="margin-left:12px">
+          <input type="checkbox" id="mineOnly" /> Assigned to me
+        </label>
+      </div>
+      <div id="listMessage"></div>
+    </div>
+
+    <div class="panel">
+      <div id="rows"></div>
+      <div class="foot">
+        <button class="secondary" id="loadMore" hidden>Load more</button>
+      </div>
+    </div>
+
+    <div class="panel" id="threadPanel" hidden>
+      <h2 id="threadTitle">Conversation</h2>
+      <p class="hint" id="threadMeta"></p>
+
+      <!--
+        Handing a conversation over and closing it. Both endpoints existed from
+        the start and nothing here called them, so every conversation stayed
+        open and unassigned forever and the "assigned to me" filter was always
+        empty — which is most of what makes a shared inbox shared.
+      -->
+      <div class="actions" id="threadControls" hidden>
+        <span class="hint" id="assignedTo"></span>
+        <span id="assignControls" hidden style="margin-left:12px">
+          <select id="assignPicker" hidden></select>
+          <button class="secondary" id="assignMe">Assign to me</button>
+          <button class="secondary" id="unassign" hidden>Unassign</button>
+        </span>
+        <span id="statusControls" hidden style="margin-left:12px">
+          <label for="statusPicker" class="hint">Status</label>
+          <select id="statusPicker">
+            <option value="open">Open</option>
+            <option value="pending">Pending</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+          </select>
+        </span>
+        <!--
+          Repairs a gap left by a webhook that never arrived. Only on message
+          threads: a comment thread has no conversations edge to re-read.
+        -->
+        <span id="resyncControls" hidden style="margin-left:12px">
+          <button class="secondary" id="resync">Re-check with Instagram</button>
+          <span class="hint" id="resyncNote"></span>
+        </span>
+      </div>
+
+      <div class="foot">
+        <button class="secondary" id="loadOlder" hidden>Load older messages</button>
+      </div>
+      <div id="messages"></div>
+      <div id="replyBox" hidden>
+        <!-- What the next reply will answer, when the agent picked a message. -->
+        <div id="replyTargetBanner" class="hint" hidden
+             style="border-left:3px solid currentColor;padding-left:8px;margin-bottom:6px"></div>
+        <label for="replyBody">Reply</label>
+        <textarea id="replyBody" rows="3" maxlength="5000"
+                  placeholder="Type a reply…"></textarea>
+        <div class="actions">
+          <button id="sendReply">Send</button>
+          <label class="hint" style="margin-left:12px">
+            <input type="checkbox" id="internalNote" /> Internal note (never sent)
+          </label>
+        </div>
+      </div>
+      <div id="threadMessage"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/inbox.js"></script>
+</body>
+</html>

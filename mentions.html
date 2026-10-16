@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mentions · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:10px">Back</a>
+    </span>
+  </header>
+
+  <main>
+    <!-- THE LIST. Hidden wholesale once a thread is open, so the page is one
+         screen at a time rather than a list that scrolls away under a panel. -->
+    <div id="listView">
+      <div class="panel">
+        <h2>Mentions</h2>
+        <p class="hint">
+          Comments where somebody tagged this business on someone else's post, newest first.
+          Open one to see the post it was left under and the thread around it.
+        </p>
+        <div id="listMessage"></div>
+      </div>
+
+      <div class="panel">
+        <div id="rows"></div>
+        <div class="foot">
+          <button class="secondary" id="loadMore" hidden>Load more</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- THE THREAD. Built entirely in JS; kept empty here so there is no
+         half-rendered shell visible before a mention is chosen. -->
+    <div id="threadView" hidden>
+      <div class="panel">
+        <button class="secondary" id="backToList">← All mentions</button>
+        <div id="threadMessage"></div>
+      </div>
+      <div id="threadBody"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/mentions.js"></script>
+</body>
+</html>

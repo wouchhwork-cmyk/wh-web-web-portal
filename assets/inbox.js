@@ -1,0 +1,1820 @@
+/**
+ * The shared inbox.
+ *
+ * Every list is cursor-paginated by the API, so this holds the cursor rather
+ * than a page number — the feed changes while somebody reads it, and offsets
+ * would repeat or skip conversations.
+ */
+(function () {
+  if (!window.api.requireSession()) return;
+
+  const rows = document.getElementById('rows');
+  const listMessage = document.getElementById('listMessage');
+  const threadPanel = document.getElementById('threadPanel');
+  const threadTitle = document.getElementById('threadTitle');
+  const threadMeta = document.getElementById('threadMeta');
+  const messages = document.getElementById('messages');
+  const threadMessage = document.getElementById('threadMessage');
+  const replyBox = document.getElementById('replyBox');
+  const loadMore = document.getElementById('loadMore');
+
+  let permissions = [];
+  let cursor = null;
+  let openRefId = null;
+  /*
+   * Whether the OPEN conversation allows comment moderation. The server decides
+   * it — Instagram permits hide and delete only to the owner of the media a
+   * comment sits on — so this is carried rather than re-derived.
+   */
+  let openCanModerate = false;
+  let openConversation = null;
+  /** This agent's own employee ref, so "assign to me" has something to send. */
+  let myEmployeeRefId = null;
+  /** Colleagues, loaded once and only when this agent may see them. */
+  let team = null;
+  /** Older messages in the open thread; null once the whole thread is loaded. */
+  let threadCursor = null;
+  /*
+   * Minted per COMPOSED MESSAGE, not per attempt.
+   *
+   * It used to be `Date.now()` at send time, which meant every retry carried a
+   * NEW key — so the mechanism protected against nothing except a double click
+   * inside the same millisecond. The key is now issued once for what the agent
+   * typed and reused for every attempt at sending it, which is the only shape
+   * that makes a retry after a timeout safe.
+   */
+  let replyKey = null;
+
+  function newReplyKey() {
+    const random =
+      window.crypto && window.crypto.randomUUID
+        ? window.crypto.randomUUID()
+        : String(Date.now()) + '-' + String(Math.random()).slice(2);
+    return 'reply-' + random;
+  }
+
+  function show(target, kind, text, code) {
+    target.innerHTML = '';
+    const box = document.createElement('div');
+    box.className = 'message ' + kind;
+    box.textContent = text;
+    if (code) {
+      const small = document.createElement('span');
+      small.className = 'code';
+      small.textContent = code;
+      box.appendChild(small);
+    }
+    target.appendChild(box);
+  }
+
+  function handle(error, target) {
+    if (error.status === 401) {
+      window.api.clearSession();
+      window.location.href = 'index.html';
+      return;
+    }
+    show(target, 'error', error.message, error.code);
+  }
+
+  function pill(text, kind) {
+    const span = document.createElement('span');
+    span.className = 'pill ' + (kind || 'none');
+    span.textContent = String(text).replace(/_/g, ' ');
+    return span;
+  }
+
+  function when(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+  }
+
+  function rowFor(conversation) {
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const left = document.createElement('div');
+    const title = document.createElement('strong');
+    /*
+     * The PERSON leads, not the kind. A name is not always known — a direct
+     * message carries only a platform id until the thread's participants are
+     * read — so the kind is the fallback rather than the headline.
+     */
+    const customer = conversation.customer;
+    title.textContent =
+      (customer && customer.displayName) ||
+      (customer ? 'Unnamed customer' : conversation.conversationKind.replace(/_/g, ' '));
+
+    /*
+     * The picture, which the API has returned all along and nothing ever drew.
+     * The link is Meta's and EXPIRES after a few days, so a failure to load is
+     * expected: the image removes itself and the name carries the row, rather
+     * than leaving a broken-image icon next to every older conversation.
+     */
+    if (customer && customer.avatarUrl) {
+      var face = document.createElement('img');
+      face.src = customer.avatarUrl;
+      face.alt = '';
+      face.loading = 'lazy';
+      face.width = 28;
+      face.height = 28;
+      face.style.borderRadius = '50%';
+      face.style.verticalAlign = 'middle';
+      face.style.marginRight = '8px';
+      face.addEventListener('error', function () { face.remove(); });
+      title.prepend(face);
+    }
+
+    // Triage at a glance: someone who follows you is not a cold contact.
+    if (customer && customer.followsUs) title.appendChild(pill('follows you', 'active'));
+    if (customer && customer.isVerified) title.appendChild(pill('verified', 'none'));
+
+    left.appendChild(title);
+    left.appendChild(document.createElement('br'));
+    const meta = document.createElement('small');
+    meta.className = 'hint';
+    meta.textContent =
+      conversation.conversationKind.replace(/_/g, ' ') +
+      ' · ' + conversation.messageCount +
+      ' message' + (conversation.messageCount === 1 ? '' : 's') +
+      ' · last ' + when(conversation.lastMessageAt);
+    left.appendChild(meta);
+    row.appendChild(left);
+
+    const right = document.createElement('div');
+    right.appendChild(pill(conversation.status, conversation.status));
+    if (conversation.unreadCount > 0) {
+      right.appendChild(pill(conversation.unreadCount + ' unread', 'pending'));
+    }
+    // Visible in the list, so an agent picking work knows before opening it.
+    if (conversation.canReply === false) {
+      right.appendChild(pill('reply closed', 'suspended'));
+    }
+    /*
+     * WHO HAS IT. The whole point of a shared inbox: without this, two agents
+     * pick up the same conversation and the customer gets two answers.
+     */
+    if (conversation.assignedTo) {
+      const mine = conversation.assignedTo.refId === myEmployeeRefId;
+      right.appendChild(
+        pill(mine ? 'you' : conversation.assignedTo.name || 'assigned', mine ? 'active' : 'none'),
+      );
+    }
+    const open = document.createElement('button');
+    open.className = 'secondary';
+    open.style.marginLeft = '8px';
+    open.textContent = 'Open';
+    open.addEventListener('click', function () { openThread(conversation.refId); });
+    right.appendChild(open);
+    row.appendChild(right);
+
+    return row;
+  }
+
+  async function load(reset) {
+    if (reset) {
+      rows.innerHTML = '';
+      cursor = null;
+    }
+
+    const status = document.getElementById('statusFilter').value;
+    const mine = document.getElementById('mineOnly').checked;
+
+    const query = ['limit=20'];
+    if (status) query.push('status=' + encodeURIComponent(status));
+    if (mine) query.push('assignedToMe=true');
+    if (cursor) query.push('cursor=' + encodeURIComponent(cursor));
+
+    try {
+      const result = await window.api.request('/conversations?' + query.join('&'));
+      const items = result.data || [];
+      const pagination = (result.meta && result.meta.pagination) || {};
+
+      if (items.length === 0 && rows.children.length === 0) {
+        show(
+          listMessage,
+          'info',
+          'Nothing here yet. Conversations appear once a customer messages or comments, or once a ' +
+            'backfill has run for a connected account.',
+        );
+      } else {
+        listMessage.innerHTML = '';
+      }
+
+      items.forEach(function (conversation) { rows.appendChild(rowFor(conversation)); });
+
+      cursor = pagination.nextCursor || null;
+      loadMore.hidden = !pagination.hasMore;
+    } catch (error) {
+      handle(error, listMessage);
+    }
+  }
+
+  /*
+   * One attachment.
+   *
+   * The URL is the PLATFORM's CDN link, used directly: Meta's terms forbid
+   * storing or caching the media on our side, so there is nothing of ours to
+   * serve. A link the API marks `expires` dies with its content, about 24
+   * hours for a story, so a load failure is reported as "no longer available
+   * on the platform" rather than left as a broken image.
+   *
+   * A STORY MENTION HAS NO KNOWABLE TYPE. Meta labels the attachment
+   * `story_mention` whether the story was a photo or a video, and gives no
+   * mime type anywhere in the webhook — a video story's link answers
+   * `video/mp4`, and rendering it in an <img> simply fails. That failure used
+   * to be reported as "no longer available", which was wrong twice over: the
+   * link worked perfectly, and the message it replaced was the only thing on
+   * screen saying this was a story at all. So an image that fails is retried
+   * as a video before anything is declared gone.
+   */
+
+  /*
+   * EVERYTHING THE PLATFORM SENT, on demand.
+   *
+   * We capture far more than the thread shows — asset ids, story and reel ids,
+   * mime types, the shape of a shared post — and until now none of it was
+   * visible anywhere, which is how a captured field gets quietly dropped for
+   * looking useless. Collapsed by default so it costs an agent nothing, and one
+   * click away when somebody is trying to work out what Meta actually said.
+   *
+   * `platformDetails` is explicitly NOT part of the API contract: keys come and
+   * go as the projectors change. Read it, decide what deserves a real field,
+   * and promote that — do not branch on it.
+   */
+  function detailsPanel(summary, payload) {
+    if (!payload || Object.keys(payload).length === 0) return null;
+
+    const box = document.createElement('details');
+    box.style.marginTop = '4px';
+
+    const label = document.createElement('summary');
+    label.className = 'hint';
+    label.style.cursor = 'pointer';
+    label.textContent = summary + ' (' + Object.keys(payload).length + ')';
+    box.appendChild(label);
+
+    const body = document.createElement('pre');
+    body.style.cssText =
+      'white-space:pre-wrap;word-break:break-word;font-size:11px;margin:4px 0;' +
+      'max-height:260px;overflow:auto;opacity:0.85';
+    // textContent, never innerHTML: every value here came from a stranger.
+    body.textContent = JSON.stringify(payload, null, 2);
+    box.appendChild(body);
+
+    return box;
+  }
+
+  function attachmentNode(attachment, messageKind) {
+    var wrap = document.createElement('div');
+    wrap.className = 'attachment';
+
+    var isStory = messageKind === 'story_reply';
+
+    /*
+     * SAY WHAT WAS SHARED, because the picture alone does not.
+     *
+     * A story somebody sent you and a story somebody FORWARDED look identical
+     * once rendered — same CDN image, same bubble — and they are not the same
+     * thing at all. The platform type is the only thing that separates them,
+     * and it was being used for `share` and ignored otherwise.
+     *
+     * The wording of the two story lines is deliberate. A story MENTION belongs
+     * to the sender, so "their story" is a fact. A shared story belongs to a
+     * third party we cannot identify — Meta sends a media id and an expiring
+     * link and nothing else, and that id resolves for nobody but the connected
+     * account — so it says "someone's" rather than inventing an owner.
+     */
+    var SHARED_LABELS = {
+      story_mention: 'mentioned you in their story',
+      ig_story: "shared someone's story",
+      ig_reel: 'shared a reel',
+      ig_post: 'shared a post',
+    };
+
+    var label = SHARED_LABELS[attachment.platformType] || (isStory ? SHARED_LABELS.story_mention : null);
+    if (label) {
+      var tag = document.createElement('small');
+      tag.className = 'hint';
+      tag.style.display = 'block';
+      tag.textContent = label;
+      wrap.appendChild(tag);
+    }
+
+    // The label above must survive whatever happens to the media below it.
+    var slot = document.createElement('div');
+    wrap.appendChild(slot);
+
+    if (!attachment.url) {
+      /*
+       * NOTHING IN THE BOX. Meta named an attachment and sent no payload for
+       * it — a shared COMMENT arrives exactly like this, as an empty `template`
+       * — so there is no link, no caption and no media.
+       *
+       * It said "(document, no link)" before, which is our internal bucket for
+       * the shape and tells an agent nothing about what the customer sent. The
+       * caption above still renders when there is one; this is the last resort.
+       */
+      slot.textContent = attachment.title
+        ? ''
+        : 'the platform sent no content for this — open the chat in ' + platformName() + ' to see it';
+      slot.style.fontStyle = 'italic';
+      slot.style.opacity = '0.75';
+      return wrap;
+    }
+
+    /*
+     * ABOVE THE BRANCHES, because two of them return.
+     *
+     * This sat after the link and video branches, so only an IMAGE ever
+     * showed a caption — and the caption matters most on exactly the ones
+     * that returned early: a shared advert's copy is the whole message, and
+     * the thread was showing a picture and a url with none of the words.
+     */
+    if (attachment.title) slot.appendChild(expandableText(attachment.title));
+
+    /*
+     * The API says whether this can be SHOWN or only linked. Deriving it from
+     * the media kind here was guesswork that got shares wrong: a shared reel is
+     * a video whose link is an instagram.com page, not a file a <video> can
+     * play.
+     */
+    var renderAs = attachment.renderAs || attachment.mediaKind;
+
+    if (renderAs === 'audio') {
+      var audio = document.createElement('audio');
+      audio.src = attachment.url;
+      audio.controls = true;
+      slot.appendChild(audio);
+      return wrap;
+    }
+
+    if (renderAs === 'link') {
+      /*
+       * A SHARED REEL CANNOT BE SHOWN, only linked. Instagram serves its embed
+       * page with x-frame-options: DENY, the oEmbed API that returns a
+       * thumbnail needs Meta oEmbed Read through App Review, and the public
+       * page carries no Open Graph tags for an unauthenticated fetch. The
+       * Graph media endpoints only read media on accounts we manage, and this
+       * is somebody else's.
+       *
+       * So it is drawn as a card rather than a bare link: an agent should be
+       * able to see at a glance that a reel was shared, without the row looking
+       * like a footnote. The permalink is permanent, unlike everything else
+       * here, so following it always works.
+       */
+      /*
+       * `share` IS NOT THE ONLY NAME FOR A SHARE.
+       *
+       * Meta labels a forwarded reel or post `ig_reel` / `ig_post` on some
+       * deliveries and `share` on others — both carry the same thing, a
+       * permanent instagram.com permalink rather than a media file. Only
+       * `share` was recognised, so a reel shared on 19 Sep fell through to the
+       * image path, put an instagram.com PAGE into an <img>, failed, and
+       * reported "this video could not be loaded" about a link that works
+       * perfectly. The same reel shared on 08 Sep arrived as `share` and
+       * rendered its card correctly, which is why one showed a link and the
+       * other did not.
+       *
+       * Recognised by the LINK as well as the label: the thing that makes this
+       * a share is that the url is an instagram.com page, and that is true
+       * whatever Meta decides to call it next.
+       */
+      /*
+       * A CARD, not a bare link — but only for something that really is a page.
+       *
+       * The label was enough to force this card, which was wrong in the
+       * direction that hurts: a shared ADVERT is labelled `ig_post` and carries
+       * a CDN image, so it was drawn as a card containing a 400-character
+       * signed url instead of the advert itself. The server now decides
+       * renderability from the url, and this agrees with it.
+       */
+      var isShare = (attachment.url || '').indexOf('instagram.com/') !== -1;
+      var isReel = isShare && (attachment.url || '').indexOf('/reel/') !== -1;
+
+      var link = document.createElement('a');
+      link.href = attachment.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.style.display = 'inline-block';
+      link.style.textDecoration = 'none';
+
+      if (isShare) {
+        var card = document.createElement('span');
+        card.style.display = 'inline-flex';
+        card.style.alignItems = 'center';
+        card.style.gap = '8px';
+        card.style.border = '1px solid currentColor';
+        card.style.borderRadius = '8px';
+        card.style.padding = '8px 12px';
+        card.style.opacity = '0.85';
+
+        var mark = document.createElement('span');
+        mark.textContent = isReel ? '\u25B6' : '\u25A6';
+        mark.style.fontSize = '18px';
+        card.appendChild(mark);
+
+        var text = document.createElement('span');
+
+        var label = document.createElement('span');
+        label.textContent = isReel ? 'Shared a reel' : 'Shared a post';
+        label.style.display = 'block';
+        label.style.fontWeight = '600';
+        text.appendChild(label);
+
+        /*
+         * The URL itself, under the label. An agent about to open a link
+         * somebody else sent them should be able to see where it goes first —
+         * and it also says which reel, when the same thread carries several.
+         *
+         * Only a real permalink, though. This branch used to be reached by
+         * CDN-backed shares too, and printing a 400-character signed blob
+         * teaches nobody anything about where they are going.
+         */
+        var href = document.createElement('small');
+        href.textContent = attachment.url;
+        href.style.display = 'block';
+        href.style.opacity = '0.7';
+        href.style.wordBreak = 'break-all';
+        text.appendChild(href);
+
+        card.appendChild(text);
+
+        link.appendChild(card);
+      } else {
+        // Meta's own word for the shape, which is not something to show an
+        // agent — "template" describes the envelope, never the content.
+        link.textContent = attachment.title || 'open attachment';
+      }
+
+      slot.appendChild(link);
+      return wrap;
+    }
+
+    if (renderAs === 'video') {
+      slot.appendChild(videoNode(attachment, slot));
+      return wrap;
+    }
+
+    // image, gif, sticker — and a story mention, which may be either.
+
+    var image = document.createElement('img');
+    image.src = attachment.url;
+    image.alt = isStory ? 'story mention' : attachment.mediaKind || 'attachment';
+    image.loading = 'lazy';
+    image.style.maxWidth = '220px';
+    image.style.borderRadius = '8px';
+    image.addEventListener('error', function () {
+      /*
+       * ANY of these links may turn out to be a video. Meta gives no mime type
+       * for a story mention, a shared story or a shared post — all three arrive
+       * as a CDN link that is a photo or a video, and only trying tells you
+       * which. Reporting "no longer available" for a video that plays perfectly
+       * was the first version of this.
+       *
+       * The API now SAYS when it is guessing — `attachment.kindIsGuessed`, set
+       * for a story mention, whose payload carries no type at all. So this
+       * first failure is declared rather than assumed, and the two sides agree
+       * instead of each carrying its own private theory.
+       *
+       * Tried once: the video's own error handler shows the placeholder.
+       */
+      slot.replaceChildren(videoNode(attachment, slot));
+    });
+    slot.appendChild(image);
+    return wrap;
+  }
+
+  function videoNode(attachment, slot) {
+    var video = document.createElement('video');
+    video.src = attachment.url;
+    video.controls = true;
+    video.preload = 'metadata';
+    video.playsInline = true;
+    video.style.maxWidth = '260px';
+    video.style.borderRadius = '8px';
+    video.addEventListener('error', function () {
+      slot.replaceChildren(gone(attachment));
+    });
+    return video;
+  }
+
+  /** What to show once a platform link has genuinely stopped working. */
+  function gone(attachment) {
+    var note = document.createElement('small');
+    note.className = 'hint';
+    note.textContent = attachment.expires
+      ? 'this ' + (attachment.mediaKind || 'attachment') + ' is no longer available on the platform'
+      : 'this ' + (attachment.mediaKind || 'attachment') + ' could not be loaded';
+    return note;
+  }
+
+  /*
+   * The platform's own name, for the times we have to send somebody to it.
+   *
+   * Hardcoded as "Instagram" in two places before this, which was true of every
+   * thread anybody had looked at and not true of the product: the same webhook
+   * shapes arrive for a Facebook Page, and telling an agent to go and check
+   * Instagram for a Messenger thread sends them somewhere the message is not.
+   */
+  const PLATFORM_NAMES = {
+    instagram: 'Instagram',
+    facebook: 'Facebook',
+    messenger: 'Messenger',
+    whatsapp: 'WhatsApp',
+  };
+
+  function platformName() {
+    const key = openConversation && openConversation.platform;
+    // Falls back to the bare key, then to something that still reads as a
+    // sentence — never to "undefined", which is how this class of bug shows up.
+    return PLATFORM_NAMES[key] || key || 'the platform';
+  }
+
+
+  /**
+   * Long text with a way to see the rest of it.
+   *
+   * CUT OFF AT 220 CHARACTERS AND THAT WAS THE END OF IT. A shared post's
+   * caption is frequently the entire message — a carousel arriving on live
+   * traffic carried about a thousand characters, of which an agent could read
+   * the first fifth and never the ask buried at the bottom. The ellipsis looked
+   * deliberate, which made it worse: nothing suggested there was more, so
+   * nobody thought to go and look on the platform.
+   *
+   * Collapsed by default, because a thread of full captions is unreadable in a
+   * different way. The control appears ONLY when there is something hidden, so
+   * a short caption gains no furniture.
+   */
+  var CAPTION_PREVIEW_CHARS = 220;
+
+  function expandableText(text) {
+    var wrap = document.createElement('div');
+
+    var body = document.createElement('small');
+    body.className = 'hint';
+    body.style.display = 'block';
+    body.style.whiteSpace = 'pre-wrap';
+    body.style.maxWidth = '320px';
+    wrap.appendChild(body);
+
+    if (text.length <= CAPTION_PREVIEW_CHARS) {
+      // Short enough to simply show. No toggle, no ellipsis.
+      body.textContent = text;
+      return wrap;
+    }
+
+    /*
+     * A real <button>, not a styled span: this is keyboard-reachable and
+     * announces itself, and the captions most worth expanding are the ones
+     * somebody is reading carefully.
+     */
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'secondary';
+    toggle.style.cssText =
+      'display:block;margin-top:2px;padding:0;border:0;background:none;' +
+      'font-size:11px;text-decoration:underline;cursor:pointer;opacity:0.8';
+
+    var expanded = false;
+    var render = function () {
+      // textContent throughout: this is somebody else's caption, and it reaches
+      // the page as words rather than as markup.
+      body.textContent = expanded ? text : text.slice(0, CAPTION_PREVIEW_CHARS) + '…';
+      toggle.textContent = expanded ? 'Show less' : 'Show more';
+      toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    };
+
+    toggle.addEventListener('click', function () {
+      expanded = !expanded;
+      render();
+    });
+
+    render();
+    wrap.appendChild(toggle);
+    return wrap;
+  }
+
+  function messageRow(message) {
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const left = document.createElement('div');
+
+    /*
+     * WHAT THIS ANSWERS, above the message itself — the way every messaging app
+     * draws it. Instagram lets a customer reply to one specific message, and
+     * without this their "Reply" is a loose line and nobody can tell which of
+     * five outbound messages it was aimed at.
+     */
+    if (message.replyTo) {
+      var quote = document.createElement('div');
+      quote.className = 'hint';
+      quote.style.borderLeft = '3px solid currentColor';
+      quote.style.paddingLeft = '8px';
+      quote.style.marginBottom = '4px';
+      quote.style.opacity = '0.75';
+
+      /*
+       * WHO was answered, then WHAT. Three states, not two: an answer to
+       * something we sent, an answer to something the customer said earlier,
+       * and an answer to a message we never received — which says so plainly
+       * rather than pretending the reply is a loose line.
+       */
+      var who = document.createElement('strong');
+      who.style.display = 'block';
+      who.textContent = message.replyTo.isSelfReply
+        ? 'Replying to their own earlier message'
+        : message.replyTo.direction === 'outbound'
+          ? 'Replying to you'
+          : 'Replying to';
+      quote.appendChild(who);
+
+      var what = document.createElement('span');
+      // Excerpt only; the API trims it so the thread carries no second copy.
+      what.textContent = message.replyTo.refId
+        ? message.replyTo.excerpt || '(no text)'
+        : 'a message we never received';
+      quote.appendChild(what);
+
+      left.appendChild(quote);
+    }
+
+    /*
+     * REPLYING TO A STORY, which is not the same as replying to a message.
+     *
+     * A customer taps a story and types. Nothing is being answered and there is
+     * no text to quote, so this cannot reuse the block above — it shows the
+     * story itself, which is the whole context for whatever they said.
+     *
+     * The thumbnail is Meta's CDN link and dies with the story, about 24 hours,
+     * so a failure to load is expected rather than a bug: the label survives on
+     * its own and says the story has gone.
+     */
+    if (message.repliedToStory) {
+      var storyQuote = document.createElement('div');
+      storyQuote.className = 'hint';
+      storyQuote.style.borderLeft = '3px solid currentColor';
+      storyQuote.style.paddingLeft = '8px';
+      storyQuote.style.marginBottom = '4px';
+      storyQuote.style.opacity = '0.75';
+
+      var storyWho = document.createElement('strong');
+      storyWho.style.display = 'block';
+      storyWho.textContent = 'Replying to your story';
+      storyQuote.appendChild(storyWho);
+
+      var storyUrl = message.repliedToStory.url;
+      if (storyUrl) {
+        var thumb = document.createElement('img');
+        thumb.src = storyUrl;
+        thumb.alt = 'the story they replied to';
+        thumb.style.maxHeight = '120px';
+        thumb.style.borderRadius = '6px';
+        thumb.style.display = 'block';
+        thumb.style.marginTop = '4px';
+        /*
+         * A story can be a video, and the CDN serves it under the SAME link
+         * with no type to tell them apart — the same discovery-by-trying the
+         * attachment renderer already does. A story that has expired fails
+         * both ways, and then it says so.
+         */
+        thumb.onerror = function () {
+          var video = document.createElement('video');
+          video.src = storyUrl;
+          video.controls = true;
+          video.style.maxHeight = '120px';
+          video.style.borderRadius = '6px';
+          video.style.display = 'block';
+          video.style.marginTop = '4px';
+          video.onerror = function () {
+            var gone = document.createElement('span');
+            gone.textContent = 'this story has expired';
+            storyQuote.replaceChild(gone, video);
+          };
+          storyQuote.replaceChild(video, thumb);
+        };
+        storyQuote.appendChild(thumb);
+      } else {
+        var noLink = document.createElement('span');
+        noLink.textContent = 'the story is no longer available';
+        storyQuote.appendChild(noLink);
+      }
+
+      left.appendChild(storyQuote);
+    }
+
+    const body = document.createElement('div');
+    // Customer words: set as text, never as HTML.
+    const attachments = message.attachments || [];
+
+    /*
+     * SENT, BUT THE PLATFORM WILL NOT SAY WHAT. A shared post, story or reel
+     * whose webhook Meta dropped: the resync recovers the message id and its
+     * time, and every read path returns it with no content — so this is
+     * permanent, not pending. "(no text)" read as the customer sending an empty
+     * message, which is the one thing that did not happen.
+     */
+    if (message.contentUnavailable) {
+      /*
+       * SAY WHAT TO DO, not only what went wrong.
+       *
+       * This read "sent something Instagram will not show us", which is
+       * accurate and leaves the agent stuck: the content genuinely exists, it
+       * is simply not in any API response, so the only way to see it is to open
+       * the thread on the platform. Confirmed again on 26 Sep with a shared
+       * PROFILE — Meta sent is_unsupported: true and nothing else at all: no
+       * username, no id, no thumbnail, no link.
+       */
+      body.textContent =
+        'Unsupported message — open this chat in ' + platformName() + ' to see it';
+      body.style.fontStyle = 'italic';
+      body.style.opacity = '0.75';
+    } else if (message.platformSentNoText) {
+      /*
+       * A COMMENT THAT IS MEDIA. Instagram omits `text` entirely for a GIF, a
+       * sticker or a photo in a comment, and exposes no field for the media on
+       * ANY post — including our own, with full ownership, on every API version.
+       *
+       * This showed as a blank line, and the damage was not cosmetic: a reply
+       * underneath asking about it read as a non-sequitur, which is exactly how
+       * it turned up on live traffic.
+       */
+      body.textContent =
+        'a photo or GIF — ' + platformName() + ' gives us no media for a comment';
+      body.style.fontStyle = 'italic';
+      body.style.opacity = '0.75';
+    } else {
+      body.textContent = message.body || (attachments.length ? '' : '(no text)');
+    }
+
+    /*
+     * UNSENT ON INSTAGRAM, and still shown here on purpose. The business is
+     * accountable for the conversation, and a record that rewrites itself when
+     * somebody deletes a message is not a record — so the words stay and the
+     * marker says the platform no longer shows them. Struck through, so nobody
+     * quotes it back believing the customer can still see it.
+     */
+    if (message.deletedOnPlatform) {
+      body.style.textDecoration = 'line-through';
+      body.style.opacity = '0.7';
+    }
+    left.appendChild(body);
+
+    if (message.deletedOnPlatform) {
+      var unsent = document.createElement('small');
+      unsent.className = 'hint';
+      unsent.style.display = 'block';
+      unsent.textContent =
+        'deleted on Instagram' +
+        (message.deletedOnPlatformAt ? ' · ' + when(message.deletedOnPlatformAt) : '') +
+        ' — kept here';
+      left.appendChild(unsent);
+    }
+
+    var facts = message.platformDetails || {};
+
+    /*
+     * THE CUSTOMER TAPPED SOMETHING rather than typing it.
+     *
+     * The body is the words on the button, which is right — that is the
+     * customer's side of the exchange, and an agent should read "See menu", not
+     * MENU_V2_EN. But a tap and a sentence are different acts: one is a choice
+     * from what we offered, the other is a person writing to us, and replying
+     * to the first as though it were the second reads badly.
+     */
+    if (facts.isPostback || facts.quickReplyPayload) {
+      var tapped = document.createElement('small');
+      tapped.className = 'hint';
+      tapped.style.display = 'block';
+      tapped.textContent = facts.isPostback ? 'tapped a button' : 'chose a quick reply';
+      left.appendChild(tapped);
+    }
+
+    /*
+     * HOW THEY GOT HERE. Meta tells us when a conversation started from an ad
+     * or a referral link, and we have always stored it and never shown it —
+     * which made it useless. An agent who knows the customer arrived from a
+     * specific ad is answering a different question from one who does not.
+     */
+    if (facts.referral && typeof facts.referral === 'object') {
+      var from = document.createElement('small');
+      from.className = 'hint';
+      from.style.display = 'block';
+      var referralParts = [];
+      if (facts.referral.source) referralParts.push(String(facts.referral.source).toLowerCase());
+      if (facts.referral.ad_id) referralParts.push('ad ' + facts.referral.ad_id);
+      if (facts.referral.ref) referralParts.push('ref ' + facts.referral.ref);
+      from.textContent =
+        'arrived from ' + (referralParts.length ? referralParts.join(' · ') : 'a referral');
+      left.appendChild(from);
+    }
+
+    /*
+     * The customer's emoji on this message. Shown ON the message, because that
+     * is what it is: a reaction is a property of a message, not a line in the
+     * conversation.
+     */
+    if (message.reaction) {
+      var react = document.createElement('span');
+      react.style.display = 'inline-block';
+      react.style.marginTop = '2px';
+      react.style.fontSize = '15px';
+      react.title = message.reaction.name || 'reaction';
+      react.textContent = message.reaction.emoji || '\u2764\ufe0f';
+      left.appendChild(react);
+    }
+
+    // Media, where there is any. Before this the thread showed "(no text)" for
+    // a photo, a GIF, a video or a story mention — which is every message whose
+    // whole content is the attachment.
+    attachments.forEach(function (attachment) {
+      left.appendChild(attachmentNode(attachment, message.messageKind));
+      const attachmentDetails = detailsPanel('everything Meta sent about this file', attachment.platformDetails);
+      if (attachmentDetails) left.appendChild(attachmentDetails);
+    });
+    const meta = document.createElement('small');
+    meta.className = 'hint';
+    // WHO sent it, where the API knows: a shared inbox needs to show which
+    // colleague answered, and the thread used to say only "outbound".
+    const parts = [message.direction || message.messageKind || ''];
+    /*
+     * WHO WROTE IT. A comment thread carries several different customers — one
+     * post, many commenters — and every inbound message was drawn as an unnamed
+     * "inbound", so an agent could not tell two people apart or notice that a
+     * reply came from somebody else entirely.
+     */
+    if (message.author) parts.push('@' + message.author);
+    if (message.sentBy) parts.push(message.sentBy.name || 'a colleague');
+    if (message.isInternalNote) parts.push('internal note');
+    // Read receipts are about OUR messages: whether the customer has seen it.
+    if (message.seenAt) parts.push('seen ' + when(message.seenAt));
+    parts.push(when(message.platformSentAt || message.createdAt));
+    meta.textContent = parts.filter(Boolean).join(' · ');
+    left.appendChild(meta);
+
+    const messageDetails = detailsPanel('everything Meta sent about this message', message.platformDetails);
+    if (messageDetails) left.appendChild(messageDetails);
+    row.appendChild(left);
+
+    const right = document.createElement('div');
+    if (message.status) right.appendChild(pill(message.status, message.status));
+
+    /*
+     * Answer THIS message, the way the customer can answer ours. Offered only
+     * where the platform can act on it: a message with no platform id — an
+     * internal note, or a send still in the relay — has nothing to quote.
+     */
+    /*
+     * HIDE AND DELETE, on comments on our OWN post only.
+     *
+     * Both are offered together because they answer different needs: hiding is
+     * reversible and takes the comment off the post for everybody else, while
+     * deleting is permanent. Delete confirms first — Instagram sends no webhook
+     * when a comment is deleted, so there is no undo and no way for us even to
+     * observe it happening.
+     *
+     * Only for the customer's own comments: our replies are ours to delete too,
+     * but the platform id is what matters and both have one, so the control is
+     * offered on anything the platform can act on.
+     */
+    /*
+     * THE INBOX AND INSTAGRAM DISAGREE, and saying so is the whole point.
+     *
+     * Hiding and deleting are marked here optimistically, so a send that died
+     * leaves the comment public while this thread shows it as gone. Without
+     * this line an agent reads "hidden", believes it, and the comment stays up.
+     */
+    if (message.moderationFailed) {
+      var stuck = document.createElement('small');
+      stuck.className = 'hint';
+      stuck.style.display = 'block';
+      stuck.style.color = '#b45309';
+      stuck.textContent =
+        'This did not reach Instagram — the comment is still visible there.';
+      left.appendChild(stuck);
+    }
+
+    if (openCanModerate && message.moderationFailed) {
+      var again = document.createElement('button');
+      again.className = 'secondary';
+      again.style.marginLeft = '8px';
+      again.textContent = 'Send again';
+      again.addEventListener('click', function () {
+        void retryModeration(message);
+      });
+      right.appendChild(again);
+    }
+
+    if (openCanModerate && message.canBeRepliedTo) {
+      var hide = document.createElement('button');
+      hide.className = 'secondary';
+      hide.style.marginLeft = '8px';
+      hide.textContent = message.hiddenOnPlatform ? 'Unhide' : 'Hide';
+      hide.addEventListener('click', function () {
+        void moderate(message, message.hiddenOnPlatform ? 'unhide' : 'hide');
+      });
+      right.appendChild(hide);
+
+      var remove = document.createElement('button');
+      remove.className = 'secondary';
+      remove.style.marginLeft = '8px';
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', function () {
+        // Permanent on Instagram, and we cannot detect it being undone.
+        if (!window.confirm('Delete this comment on Instagram? This cannot be undone.')) return;
+        void moderate(message, 'delete');
+      });
+      right.appendChild(remove);
+    }
+
+    if (message.canBeRepliedTo) {
+      var reply = document.createElement('button');
+      reply.className = 'secondary';
+      reply.style.marginLeft = '8px';
+      reply.textContent = 'Reply';
+      reply.addEventListener('click', function () {
+        setReplyTarget(message);
+      });
+      right.appendChild(reply);
+    }
+
+    row.appendChild(right);
+    return row;
+  }
+
+  /*
+   * What the next reply will answer, held until it is sent or cleared. Kept
+   * beside the composer rather than in the message row so it survives the
+   * thread re-rendering under it.
+   */
+  var replyTarget = null;
+
+  function setReplyTarget(message) {
+    replyTarget = message;
+    renderReplyTarget();
+    var box = document.getElementById('replyBody');
+    if (box) box.focus();
+  }
+
+  function clearReplyTarget() {
+    replyTarget = null;
+    renderReplyTarget();
+  }
+
+  function renderReplyTarget() {
+    var banner = document.getElementById('replyTargetBanner');
+    if (!banner) return;
+    banner.textContent = '';
+    banner.hidden = replyTarget === null;
+    if (replyTarget === null) return;
+
+    var label = document.createElement('span');
+    label.textContent =
+      'Replying to: ' + ((replyTarget.body || '').slice(0, 60) || '(no text)');
+    banner.appendChild(label);
+
+    var cancel = document.createElement('button');
+    cancel.className = 'secondary';
+    cancel.style.marginLeft = '8px';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', clearReplyTarget);
+    banner.appendChild(cancel);
+  }
+
+
+  /* ------------------------------------------------------------------ *
+   * Assignment and status
+   *
+   * Both endpoints existed from the first commit and nothing ever called
+   * them, so every conversation was open and unassigned forever.
+   *
+   * "Assign to me" needs no employee list, so it works for an agent who
+   * cannot see the team. The picker appears only when this agent holds
+   * employees.view — otherwise handing work to a NAMED colleague would
+   * require a list they are not allowed to read.
+   * ------------------------------------------------------------------ */
+
+  async function loadTeam() {
+    if (team !== null) return team;
+    if (permissions.indexOf('employees.view') === -1) {
+      team = [];
+      return team;
+    }
+    try {
+      // Every page: somebody on page two is still somebody the work can be
+      // assigned to, and a picker that silently omits them is worse than slow.
+      const people = await window.api.requestAll('/employees');
+      team = people.filter(function (person) {
+        // Only somebody who can actually pick the work up.
+        return person.status === 'active';
+      });
+    } catch (_) {
+      // Not fatal: assign-to-me still works, which is the common case anyway.
+      team = [];
+    }
+    return team;
+  }
+
+  /**
+   * THE POST SOMEBODY TAGGED US UNDER.
+   *
+   * A mention is a comment on a stranger's post, and without this the thread is
+   * one line of text with no hint of what it is about — an agent cannot answer
+   * "do you feel same ???" without seeing the post it was said under.
+   *
+   * Everything here is drawn ONLY if the platform gave it. Meta omits fields it
+   * will not answer rather than erroring, so a missing like count means "we
+   * were refused", and showing 0 would be inventing a fact.
+   */
+  function renderMentionContext(conversation) {
+    var existing = document.getElementById('mentionContext');
+    if (existing) existing.remove();
+
+    var context = conversation.mentionContext;
+    if (!context) return;
+
+    var card = document.createElement('div');
+    card.id = 'mentionContext';
+    card.className = 'attachment';
+    card.style.marginBottom = '12px';
+
+    var heading = document.createElement('strong');
+    heading.style.display = 'block';
+    heading.textContent = context.ownerUsername
+      ? 'Tagged under @' + context.ownerUsername + "'s post"
+      : 'Tagged under a post';
+    card.appendChild(heading);
+
+    /*
+     * ASK WHAT IT IS, RATHER THAN GUESSING AND RECOVERING.
+     *
+     * This used to put `mediaUrl` into an <img> and wait for the error. On a
+     * reel `media_url` IS the .mp4 — 1.6 MB of video/mp4, verified on the wire
+     * — so the image always failed, and the video only appeared after a
+     * round trip that downloaded the whole file into a tag that could never
+     * render it. The API says `mediaType`, so this asks.
+     *
+     * The same order the mentions page uses: a thumbnail is always a still, and
+     * media_url is only an image when there is no thumbnail beside it.
+     */
+    var MEDIA_STYLE = 'max-height:160px;border-radius:6px;display:block;margin:6px 0';
+
+    /** Media is gone — but `permalink` never expires, so offer that instead. */
+    function mediaGone(what) {
+      var note = document.createElement('div');
+      note.className = 'hint';
+      note.textContent = what + ' is no longer available';
+      if (context.permalink) {
+        note.textContent += ' — ';
+        var link = document.createElement('a');
+        link.href = context.permalink;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'open it on Instagram';
+        note.appendChild(link);
+      }
+      return note;
+    }
+
+    /*
+     * THE REST OF A CAROUSEL, after the cover.
+     *
+     * `previewUrl` on a CAROUSEL_ALBUM is one image out of however many, so a
+     * mention on a ten-slide post read as a mention on a single photo. The
+     * server sends every slide; this draws the ones the cover is hiding.
+     */
+    function carouselStrip() {
+      var slides = context.carousel || [];
+      if (slides.length < 2) return null;
+
+      var wrap = document.createElement('div');
+      var label = document.createElement('small');
+      label.className = 'muted';
+      label.style.display = 'block';
+      label.textContent = slides.length + ' images in this post';
+      wrap.appendChild(label);
+
+      var strip = document.createElement('div');
+      strip.style.cssText =
+        'display:flex;gap:6px;overflow-x:auto;margin-top:4px;padding-bottom:4px';
+      slides.slice(1).forEach(function (slide) {
+        var url = slide.previewUrl || slide.mediaUrl;
+        if (!url) return;
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.style.cssText =
+          'width:56px;height:56px;object-fit:cover;border-radius:6px;flex:0 0 auto';
+        // Signed links expire; drop a dead slide rather than leave a broken
+        // tile sitting between working ones.
+        img.onerror = function () { img.remove(); };
+        strip.appendChild(img);
+      });
+
+      if (!strip.children.length) return null;
+      wrap.appendChild(strip);
+      return wrap;
+    }
+
+    function still() {
+      var img = document.createElement('img');
+      img.src = context.previewUrl || context.mediaUrl;
+      img.alt = 'the post they tagged you under';
+      img.style.cssText = MEDIA_STYLE;
+      img.onerror = function () {
+        img.replaceWith(mediaGone('The preview'));
+      };
+      return img;
+    }
+
+    if (context.mediaType === 'VIDEO' && context.mediaUrl) {
+      var video = document.createElement('video');
+      video.src = context.mediaUrl;
+      video.controls = true;
+      // Metadata only: an inbox should not pull megabytes to show a card.
+      video.preload = 'metadata';
+      if (context.thumbnailUrl) video.poster = context.thumbnailUrl;
+      video.style.cssText = MEDIA_STYLE;
+      video.onerror = function () {
+        // The video link dies first; the still usually outlives it.
+        if (context.previewUrl) video.replaceWith(still());
+        else video.replaceWith(mediaGone('The video'));
+      };
+      card.appendChild(video);
+    } else if (context.previewUrl || context.mediaUrl) {
+      card.appendChild(still());
+      var strip = carouselStrip();
+      if (strip) card.appendChild(strip);
+      // Meta sometimes omits media_url on a reel and sends the thumbnail
+      // anyway, so a still with no player is correct rather than broken.
+      if (context.mediaType === 'VIDEO') {
+        var noVideo = document.createElement('div');
+        noVideo.className = 'hint';
+        noVideo.textContent = 'Instagram did not include the video for this post.';
+        card.appendChild(noVideo);
+      }
+    }
+
+    if (context.caption) {
+      var caption = document.createElement('div');
+      caption.className = 'hint';
+      caption.style.whiteSpace = 'pre-wrap';
+      caption.style.margin = '4px 0';
+      // Somebody else's words: set as text, never as HTML.
+      caption.textContent = context.caption;
+      card.appendChild(caption);
+    }
+
+    /*
+     * COUNTS THE PLATFORM ACTUALLY GAVE US.
+     *
+     * shareCount is always null — Instagram exposes no share or save count for
+     * a post we do not own, and there is no field to ask for. It is therefore
+     * left out entirely rather than shown as a zero or a dash, which would both
+     * read as "nobody shared this".
+     */
+    var facts = [];
+    if (typeof context.likeCount === 'number') {
+      facts.push(context.likeCount.toLocaleString() + ' likes');
+    }
+    if (typeof context.commentCount === 'number') {
+      facts.push(context.commentCount.toLocaleString() + ' comments');
+    }
+    if (context.mediaType) facts.push(context.mediaType.toLowerCase());
+    if (context.postedAt) facts.push('posted ' + when(context.postedAt));
+    if (facts.length) {
+      var stats = document.createElement('small');
+      stats.className = 'hint';
+      stats.style.display = 'block';
+      stats.textContent = facts.join(' · ');
+      card.appendChild(stats);
+    }
+
+    if (context.permalink) {
+      var link = document.createElement('a');
+      link.href = context.permalink;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.style.display = 'block';
+      link.style.marginTop = '4px';
+      link.textContent = 'Open on Instagram ↗';
+      card.appendChild(link);
+    }
+
+    /*
+     * THE REPLIES UNDER OUR MENTION — a snapshot, and deliberately labelled as
+     * one. Meta sends no webhook when somebody replies to a mention, so this is
+     * the thread as it stood when we read it and it does not update itself.
+     *
+     * Every reply is anonymous: the platform omits the author on all of them.
+     * Some carry no text either, which is what a media-only reply looks like
+     * from here — so it is shown as a real reply we simply cannot read.
+     */
+    var replies = context.replies || [];
+    if (replies.length) {
+      var thread = document.createElement('div');
+      thread.style.marginTop = '8px';
+      thread.style.borderTop = '1px solid currentColor';
+      thread.style.paddingTop = '6px';
+
+      var threadHead = document.createElement('small');
+      threadHead.className = 'hint';
+      threadHead.style.display = 'block';
+      threadHead.textContent =
+        replies.length + (replies.length === 1 ? ' reply' : ' replies') +
+        ' under your mention · when we last looked';
+      thread.appendChild(threadHead);
+
+      replies.forEach(function (reply) {
+        var row = document.createElement('div');
+        row.style.margin = '4px 0 0 8px';
+
+        var who = document.createElement('small');
+        who.className = 'hint';
+        who.style.display = 'block';
+        // Never available — say so plainly rather than leaving a blank.
+        who.textContent =
+          'someone (Instagram does not tell us who)' +
+          (reply.postedAt ? ' · ' + when(reply.postedAt) : '');
+        row.appendChild(who);
+
+        var text = document.createElement('div');
+        if (reply.text) {
+          text.textContent = reply.text;
+        } else {
+          text.className = 'hint';
+          text.style.fontStyle = 'italic';
+          text.textContent = 'a reply we cannot read — Instagram withheld it';
+        }
+        row.appendChild(text);
+        thread.appendChild(row);
+      });
+
+      card.appendChild(thread);
+    }
+
+    messages.appendChild(card);
+  }
+
+  function renderThreadControls(conversation) {
+    const controls = document.getElementById('threadControls');
+    const assignedLabel = document.getElementById('assignedTo');
+    const assignWrap = document.getElementById('assignControls');
+    const statusWrap = document.getElementById('statusControls');
+    const picker = document.getElementById('assignPicker');
+    const assignMe = document.getElementById('assignMe');
+    const unassign = document.getElementById('unassign');
+    const statusPicker = document.getElementById('statusPicker');
+
+    const canAssign = permissions.indexOf('conversations.assign') !== -1;
+    const canManage = permissions.indexOf('conversations.manage') !== -1;
+
+    controls.hidden = !canAssign && !canManage;
+    assignWrap.hidden = !canAssign;
+    statusWrap.hidden = !canManage;
+
+    /*
+     * Only a message thread can be re-read from the platform, so the button is
+     * hidden rather than shown and then refused: the API answers 422 for a
+     * comment thread, and a control that only ever errors is worse than none.
+     */
+    const resyncWrap = document.getElementById('resyncControls');
+    const kind = conversation.conversationKind;
+    resyncWrap.hidden = !canManage || (kind !== 'direct_message' && kind !== 'story_reply');
+    document.getElementById('resyncNote').textContent = '';
+
+    const holder = conversation.assignedTo;
+    const mine = holder && holder.refId === myEmployeeRefId;
+    assignedLabel.textContent = holder
+      ? mine
+        ? 'Assigned to you'
+        : 'Assigned to ' + (holder.name || 'a colleague')
+      : 'Unassigned';
+
+    assignMe.hidden = Boolean(mine) || !myEmployeeRefId;
+    unassign.hidden = !holder;
+    statusPicker.value = conversation.status || 'open';
+
+    if (canAssign) {
+      void loadTeam().then(function (people) {
+        if (people.length === 0) {
+          picker.hidden = true;
+          return;
+        }
+        picker.hidden = false;
+        picker.innerHTML = '';
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'Assign to…';
+        picker.appendChild(none);
+        people.forEach(function (person) {
+          const option = document.createElement('option');
+          option.value = person.refId;
+          // The employees list returns a single joined `name`, not parts.
+          option.textContent = person.name || 'Unnamed colleague';
+          picker.appendChild(option);
+        });
+        picker.value = holder ? holder.refId : '';
+      });
+    }
+  }
+
+  async function setAssignee(employeeRefId) {
+    if (!openRefId) return;
+    try {
+      await window.api.request('/conversations/' + encodeURIComponent(openRefId) + '/assign', {
+        method: 'POST',
+        body: { employeeRefId: employeeRefId },
+      });
+      // Re-read rather than patching local state: the API is the authority on
+      // who holds it, and a colleague may have taken it in the meantime.
+      await openThread(openRefId);
+      await load(true);
+    } catch (error) {
+      handle(error, threadMessage);
+    }
+  }
+
+  async function setStatus(status) {
+    if (!openRefId) return;
+    try {
+      await window.api.request('/conversations/' + encodeURIComponent(openRefId) + '/status', {
+        method: 'POST',
+        body: { status: status },
+      });
+      await openThread(openRefId);
+      await load(true);
+    } catch (error) {
+      handle(error, threadMessage);
+    }
+  }
+
+  async function openThread(refId, appendOlder) {
+    const older = Boolean(appendOlder);
+    openRefId = refId;
+    threadPanel.hidden = false;
+    threadMessage.innerHTML = '';
+    if (!older) {
+      threadCursor = null;
+      messages.innerHTML = '<p class="hint">Loading…</p>';
+    }
+
+    try {
+      // A long thread arrives one page at a time. Before this the endpoint had no
+      // pagination surface at all, so a conversation simply stopped at the
+      // newest fifty messages with nothing to say there were more.
+      const query = older && threadCursor ? '?cursor=' + encodeURIComponent(threadCursor) : '';
+      const result = await window.api.request(
+        '/conversations/' + encodeURIComponent(refId) + query,
+      );
+      const data = result.data || {};
+      const conversation = data.conversation || {};
+      // In meta, like every other list on this API.
+      const pagination = (result.meta && result.meta.pagination) || {};
+
+      const person = conversation.customer;
+      threadTitle.textContent =
+        (person && person.displayName) ||
+        (conversation.conversationKind || 'Conversation').replace(/_/g, ' ');
+      threadMeta.textContent =
+        (conversation.conversationKind || '').replace(/_/g, ' ') +
+        ' · ' + (conversation.platform || '') +
+        ' · ' + (conversation.status || '') +
+        ' · ' + (conversation.messageCount || 0) + ' messages';
+
+      /*
+       * SET BEFORE THE ROWS ARE BUILT, because messageRow reads it — placed
+       * after the draw it was always one thread behind, so opening a moderable
+       * conversation showed no controls until you opened another.
+       *
+       * Both halves are required: the permission to manage, and the platform
+       * actually allowing it. The server answers the second — Instagram permits
+       * moderation only on a comment sitting on a post we own — so this carries
+       * its answer rather than guessing from the conversation kind.
+       */
+      openCanModerate =
+        conversation.canModerateComments === true &&
+        permissions.indexOf('conversations.manage') !== -1;
+
+      if (!older) messages.innerHTML = '';
+      /*
+       * BEFORE ANYTHING IS DRAWN, because the rendering reads it.
+       *
+       * This was set after the message loop, which made `platformName()` fall
+       * back to the word "the platform" on a freshly opened thread — and worse
+       * on the second one, where it still held the PREVIOUS conversation and
+       * could confidently name the wrong network. Nothing above this line
+       * renders, so it is the right place for it.
+       */
+      openConversation = conversation;
+
+      // The tagged post sits above the thread, not inside it: it is what the
+      // whole conversation is ABOUT, not one message in it.
+      if (!older) renderMentionContext(conversation);
+      const list = data.messages || [];
+      if (list.length === 0 && !older) {
+        messages.appendChild(Object.assign(document.createElement('p'), {
+          className: 'hint',
+          textContent: 'No messages in this thread.',
+        }));
+      }
+      list.forEach(function (message) { messages.appendChild(messageRow(message)); });
+
+      threadCursor = pagination.nextCursor || null;
+      document.getElementById('loadOlder').hidden = !pagination.hasMore;
+
+      renderThreadControls(conversation);
+
+      /*
+       * The reply box follows the API's OWN answer rather than a rule
+       * reimplemented here. `canReply` depends on when the customer last wrote,
+       * which the client cannot work out from the thread alone — and duplicating
+       * a 24-hour rule in two places is how the two drift apart.
+       */
+      const canReply = permissions.indexOf('conversations.reply') !== -1;
+      replyBox.hidden = !canReply;
+
+
+      const blocked = conversation.canReply === false;
+      const send = document.getElementById('sendReply');
+      const note = document.getElementById('internalNote');
+      const body = document.getElementById('replyBody');
+
+      if (canReply && blocked) {
+        // An internal note never reaches the platform, so it stays available —
+        // and becomes the only thing this box can do.
+        note.checked = true;
+        note.disabled = true;
+        body.placeholder = 'Add an internal note…';
+        send.textContent = 'Save note';
+        show(
+          threadMessage,
+          'info',
+          conversation.replyBlockedReason ||
+            'The platform will not accept a reply on this conversation right now.',
+        );
+      } else if (canReply) {
+        note.disabled = false;
+        body.placeholder = 'Type a reply…';
+        send.textContent = 'Send';
+
+        /*
+         * A REPLY TO A MENTION CANNOT BE UNSENT.
+         *
+         * Instagram lets a comment be deleted only by the owner of the media it
+         * sits on — explicitly even when we wrote it — so a reply we post on
+         * somebody else's post is permanent from our side. It cannot even be
+         * read back by id (platform-limitations 1.8, 4.6). One we had to remove
+         * during testing had to be deleted by hand, from the app.
+         *
+         * Said BEFORE the agent types, because afterwards there is nothing
+         * anyone can do about it. The composer is not blocked — replying is the
+         * whole point of the thread — so this is a warning, not a refusal.
+         */
+        if (conversation.conversationKind === 'mention') {
+          show(
+            threadMessage,
+            'info',
+            'This reply is posted on someone else\u2019s post. Instagram does not let us ' +
+              'delete it afterwards \u2014 only the post\u2019s owner can.',
+          );
+        }
+      }
+
+      // Reading a thread marks it read; failing that is not worth an error.
+      try {
+        await window.api.request('/conversations/' + encodeURIComponent(refId) + '/read', {
+          method: 'POST',
+        });
+      } catch (_) { /* the unread badge is cosmetic */ }
+    } catch (error) {
+      messages.innerHTML = '';
+      handle(error, threadMessage);
+    }
+  }
+
+  /**
+   * Hides, unhides or deletes one comment on the platform.
+   *
+   * Accepted rather than applied: the API writes to the outbox and the relay
+   * performs the call, so this reloads the thread instead of pretending it knows
+   * the outcome. The server has already applied the local state, which it must —
+   * Instagram sends no webhook when a comment is hidden or deleted, so nothing
+   * would ever tell us.
+   */
+  /*
+   * Sends a hide or delete again after the first one died.
+   *
+   * NOT the same call as moderate. Our copy already reads hidden — the mark is
+   * optimistic, because Instagram sends no webhook for either action — so the
+   * ordinary path is refused from here on, correctly. This replays the failed
+   * ledger row instead, which is also why pressing it twice cannot produce two
+   * calls to Instagram.
+   */
+  async function retryModeration(message) {
+    if (!openRefId) return;
+    try {
+      await window.api.request(
+        '/conversations/' +
+          encodeURIComponent(openRefId) +
+          '/messages/' +
+          encodeURIComponent(message.refId) +
+          '/moderate/retry',
+        { method: 'POST' },
+      );
+      await openThread(openRefId);
+      show(threadMessage, 'success', 'Sending to Instagram again.');
+    } catch (error) {
+      handle(error, threadMessage);
+    }
+  }
+
+  async function moderate(message, action) {
+    if (!openRefId) return;
+    try {
+      await window.api.request(
+        '/conversations/' +
+          encodeURIComponent(openRefId) +
+          '/messages/' +
+          encodeURIComponent(message.refId) +
+          '/moderate',
+        { method: 'POST', body: { action: action } },
+      );
+      await openThread(openRefId);
+      show(
+        threadMessage,
+        'success',
+        action === 'delete'
+          ? 'Deleting on Instagram. This cannot be undone.'
+          : action === 'hide'
+            ? 'Hiding on Instagram.'
+            : 'Unhiding on Instagram.',
+      );
+    } catch (error) {
+      handle(error, threadMessage);
+    }
+  }
+
+  async function sendReply() {
+    if (!openRefId) return;
+    const body = document.getElementById('replyBody').value.trim();
+    if (!body) {
+      show(threadMessage, 'error', 'A reply needs some text.');
+      return;
+    }
+
+    // Minted here, once, and kept until this message is actually accepted.
+    if (!replyKey) replyKey = newReplyKey();
+
+    const button = document.getElementById('sendReply');
+    button.disabled = true;
+    try {
+      await window.api.request('/conversations/' + encodeURIComponent(openRefId) + '/reply', {
+        method: 'POST',
+        body: {
+          body: body,
+          internalNote: document.getElementById('internalNote').checked,
+          // The SAME key for every attempt at this message, so a retry after a
+          // timeout returns the original rather than sending a second copy.
+          idempotencyKey: replyKey,
+          // Answering one message in particular, when the agent chose one. The
+          // API refuses this on an internal note, which is why the control is
+          // hidden while the note box is ticked.
+          ...(replyTarget ? { replyToMessageRefId: replyTarget.refId } : {}),
+        },
+      });
+      document.getElementById('replyBody').value = '';
+      clearReplyTarget();
+      // Delivered, so the next thing typed is a different message and gets its
+      // own key. Only ever reset on SUCCESS.
+      replyKey = null;
+      show(threadMessage, 'ok', 'Queued for delivery.');
+      await openThread(openRefId);
+    } catch (error) {
+      // The window can close between opening the thread and pressing send, so
+      // this is a normal outcome rather than a fault: explain it and keep what
+      // they typed.
+      if (error.code === 'MESSAGING_WINDOW_CLOSED') {
+        show(threadMessage, 'info', error.message);
+        if (openConversation) openConversation.canReply = false;
+        document.getElementById('internalNote').checked = true;
+        document.getElementById('internalNote').disabled = true;
+      } else {
+        handle(error, threadMessage);
+      }
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Live updates
+   *
+   * fetch + ReadableStream rather than EventSource, because EventSource
+   * cannot set an Authorization header — the alternatives are a token in
+   * the query string, which lands in access logs, or a one-time ticket
+   * endpoint. Streaming by hand costs a few lines and avoids both.
+   *
+   * The stream is an OPTIMISATION. A slow poll runs regardless, so a
+   * dropped connection, a hostile proxy or an old browser costs latency
+   * and nothing else.
+   * ------------------------------------------------------------------ */
+  const POLL_MS = 30000;
+  const STREAM_RETRY_BASE_MS = 2000;
+  const STREAM_RETRY_MAX_MS = 60000;
+
+  let streamAbort = null;
+  let streamAttempt = 0;
+  let pollTimer = null;
+
+  function onInboxChanged(change) {
+    // Refresh the list, and the open thread when it is the one that moved. An
+    // 'assigned' or 'status' event is exactly the case worth reacting to: it is
+    // a COLLEAGUE's action, and seeing it late is how two people answer the
+    // same customer.
+    load(true);
+    if (openRefId && change && change.conversationRefId === openRefId) {
+      void openThread(openRefId);
+    }
+  }
+
+  /** Parses the SSE frames out of a byte stream. */
+  async function consume(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return;
+      buffer += decoder.decode(chunk.value, { stream: true });
+
+      // Frames are separated by a blank line; anything after the last one is
+      // a partial frame and stays in the buffer.
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+
+      frames.forEach(function (frame) {
+        let event = 'message';
+        let data = '';
+        frame.split('\n').forEach(function (line) {
+          if (line.indexOf('event:') === 0) event = line.slice(6).trim();
+          else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+          // A line starting with ':' is a heartbeat comment: ignored, but it
+          // kept the connection open, which was its whole job.
+        });
+
+        /*
+         * The server CAPS a stream's lifetime, because an open stream is an
+         * authorisation with no expiry otherwise. It says so before closing, and
+         * reconnecting immediately keeps that invisible instead of waiting out
+         * the reconnect backoff for something that is not a failure.
+         */
+        if (event === 'expired') {
+          streamAttempt = 0;
+          return;
+        }
+
+        if (event !== 'inbox' || !data) return;
+        try {
+          onInboxChanged(JSON.parse(data));
+        } catch (_) { /* a malformed frame is not worth tearing the stream down */ }
+      });
+    }
+  }
+
+  async function openStream() {
+    const session = window.api.readSession();
+    if (!session || !session.accessToken) return;
+
+    streamAbort = new AbortController();
+    try {
+      const response = await fetch(window.WOUCHH_CONFIG.apiBaseUrl + '/conversations/stream', {
+        headers: { Accept: 'text/event-stream', Authorization: 'Bearer ' + session.accessToken },
+        credentials: 'include',
+        signal: streamAbort.signal,
+      });
+
+      if (!response.ok || !response.body) throw new Error('stream rejected: ' + response.status);
+
+      streamAttempt = 0;
+      await consume(response);
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;
+    }
+
+    // Ended or failed: back off and try again. The poll is still running, so
+    // nothing is lost in the meantime.
+    streamAttempt += 1;
+    const delay = Math.min(STREAM_RETRY_BASE_MS * 2 ** (streamAttempt - 1), STREAM_RETRY_MAX_MS);
+    setTimeout(function () {
+      if (!document.hidden) void openStream();
+    }, delay);
+  }
+
+  function startLiveUpdates() {
+    // The floor: even with no stream at all, the list stays roughly current.
+    pollTimer = setInterval(function () {
+      if (!document.hidden) load(true);
+    }, POLL_MS);
+
+    void openStream();
+
+    // A backgrounded tab is not worth a connection; reopening on return also
+    // catches anything missed while it was hidden.
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        if (streamAbort) streamAbort.abort();
+        return;
+      }
+      load(true);
+      void openStream();
+    });
+
+    window.addEventListener('beforeunload', function () {
+      if (pollTimer) clearInterval(pollTimer);
+      if (streamAbort) streamAbort.abort();
+    });
+  }
+
+  async function start() {
+    try {
+      const me = (await window.api.request('/auth/me')).data;
+      permissions = me.permissions || [];
+      // Needed to offer "assign to me" and to render "assigned to you": the API
+      // speaks in refIds, so a client has to know its own.
+      myEmployeeRefId = me.employeeRefId || null;
+      document.getElementById('who').textContent = me.enterprise ? me.enterprise.name : '';
+    } catch (error) {
+      handle(error, listMessage);
+      return;
+    }
+
+    if (permissions.indexOf('conversations.view') === -1) {
+      show(
+        listMessage,
+        'error',
+        'You do not have access to the inbox. It needs the unified inbox feature and a role that ' +
+          'grants conversations.view.',
+      );
+      return;
+    }
+
+    document.getElementById('statusFilter').addEventListener('change', function () { load(true); });
+    document.getElementById('mineOnly').addEventListener('change', function () { load(true); });
+    loadMore.addEventListener('click', function () { load(false); });
+    document.getElementById('sendReply').addEventListener('click', sendReply);
+
+    document.getElementById('resync').addEventListener('click', function () {
+      var button = this;
+      var note = document.getElementById('resyncNote');
+      if (!openRefId) return;
+      button.disabled = true;
+      note.textContent = 'asking Instagram…';
+
+      window.api
+        .request('/conversations/' + encodeURIComponent(openRefId) + '/resync', {
+          method: 'POST',
+        })
+        .then(function (result) {
+          /*
+           * queued:false is a success, not a failure: a repair for this thread
+           * is already running and a second would do the same work twice.
+           */
+          note.textContent = (result.data || {}).queued
+            ? 'checking — new messages appear here as they arrive'
+            : 'already checking';
+        })
+        .catch(function (error) {
+          note.textContent = 'could not start: ' + (error.message || 'unknown error');
+        })
+        .finally(function () {
+          button.disabled = false;
+        });
+    });
+
+    document.getElementById('assignMe').addEventListener('click', function () {
+      void setAssignee(myEmployeeRefId);
+    });
+    document.getElementById('unassign').addEventListener('click', function () {
+      void setAssignee(null);
+    });
+    document.getElementById('assignPicker').addEventListener('change', function (event) {
+      const value = event.target.value;
+      void setAssignee(value || null);
+    });
+    document.getElementById('statusPicker').addEventListener('change', function (event) {
+      void setStatus(event.target.value);
+    });
+    document.getElementById('loadOlder').addEventListener('click', function () {
+      void openThread(openRefId, true);
+    });
+
+    load(true);
+    startLiveUpdates();
+  }
+
+  start();
+})();

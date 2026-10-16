@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create a business account · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar"><h1>Wouchh</h1><span class="who">Create a business account</span></header>
+
+  <main class="narrow">
+    <div class="panel">
+      <h2>Create a business account</h2>
+      <p class="hint">
+        Only businesses sign up here. Wouchh staff accounts are provisioned internally and can only
+        sign in.
+      </p>
+
+      <form id="signupForm">
+        <h3 style="font-size:14px;margin:18px 0 0">The business</h3>
+        <label for="businessName">Business name</label>
+        <input id="businessName" required placeholder="Blue Bottle Cafe" />
+
+        <label for="businessEmail">Business email</label>
+        <input id="businessEmail" type="email" required placeholder="hello@bluebottle.com" />
+
+        <label for="businessMobile">Business mobile (optional)</label>
+        <div class="row">
+          <input id="businessMobile" inputmode="numeric" placeholder="9812345670" />
+          <select id="businessCountry" style="flex:0 0 90px">
+            <option value="IN">IN</option>
+            <option value="US">US</option>
+            <option value="GB">GB</option>
+            <option value="AE">AE</option>
+          </select>
+        </div>
+
+        <label for="city">City (optional)</label>
+        <input id="city" placeholder="Pune" />
+
+        <h3 style="font-size:14px;margin:22px 0 0">You, the owner</h3>
+        <div class="row">
+          <div>
+            <label for="firstName">First name</label>
+            <input id="firstName" required placeholder="Meera" />
+          </div>
+          <div>
+            <label for="lastName">Last name (optional)</label>
+            <input id="lastName" placeholder="Iyer" />
+          </div>
+        </div>
+
+        <label for="ownerEmail">Your email</label>
+        <input id="ownerEmail" type="email" placeholder="meera@bluebottle.com" />
+
+        <label for="ownerMobile">Your mobile</label>
+        <div class="row">
+          <input id="ownerMobile" inputmode="numeric" placeholder="9812345671" />
+          <select id="ownerCountry" style="flex:0 0 90px">
+            <option value="IN">IN</option>
+            <option value="US">US</option>
+            <option value="GB">GB</option>
+            <option value="AE">AE</option>
+          </select>
+        </div>
+        <p class="hint" style="margin-top:6px">
+          At least one of email or mobile is required. Whichever you give is what the code is sent
+          to — email first if you give both.
+        </p>
+
+        <label for="password">Choose a password</label>
+        <input id="password" type="password" minlength="10" required autocomplete="new-password" />
+        <p class="hint" style="margin-top:6px">At least 10 characters.</p>
+
+        <div class="actions">
+          <button type="submit" id="submit">Create account</button>
+        </div>
+      </form>
+
+      <div id="message"></div>
+      <p class="foot">Already have an account? <a href="index.html">Sign in</a></p>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/signup.js"></script>
+</body>
+</html>
