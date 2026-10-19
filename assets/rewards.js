@@ -28,6 +28,9 @@
 
   let permissions = [];
   let selectedProgram = null;
+  /* What the rule being built will carry. Cleared when the rule is created. */
+  let draftBenefits = [];
+  let draftSlots = [];
 
   function show(target, kind, text, code) {
     target.innerHTML = '';
@@ -81,6 +84,104 @@
       return format.format(minorUnits / Math.pow(10, digits));
     } catch (error) {
       return minorUnits + ' ' + currencyCode;
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Dashboard                                                           */
+  /* ------------------------------------------------------------------ */
+
+  function dashboardRow(program) {
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const left = document.createElement('div');
+    const name = document.createElement('strong');
+    name.textContent = program.name;
+    left.appendChild(name);
+
+    /*
+     * The net figures, one line per wallet. An empty list means the program has
+     * granted nothing yet, which is different from having granted zero.
+     */
+    const value = document.createElement('div');
+    value.className = 'hint';
+    value.textContent =
+      program.value.length === 0
+        ? 'nothing awarded yet'
+        : program.value
+            .map(function (v) {
+              return v.walletKind === 'points'
+                ? Number(v.net) + ' points'
+                : money(Number(v.net), v.currencyCode);
+            })
+            .join(' · ');
+    left.appendChild(value);
+
+    const counts = document.createElement('div');
+    counts.className = 'hint';
+    const parts = [
+      program.awardsGranted + ' granted',
+      program.customersRewarded + ' customers',
+    ];
+    if (program.awardsHeld > 0) parts.push(program.awardsHeld + ' waiting');
+    if (program.awardsReversed > 0) parts.push(program.awardsReversed + ' taken back');
+
+    /*
+     * Refusals, named by reason. A program granting 12 and refusing 400 is
+     * working as configured — hiding that would make a correctly-capped
+     * programme look broken, and it is the number that answers "why is nobody
+     * earning?"
+     */
+    const refused = program.byStatus.filter(function (s) {
+      return s.status.indexOf('skipped') === 0;
+    });
+    refused.forEach(function (s) {
+      parts.push(s.awards + ' ' + s.status.replace('skipped_', 'refused: ').replace(/_/g, ' '));
+    });
+    counts.textContent = parts.join(' · ');
+    left.appendChild(counts);
+
+    if (program.budgetMinor !== null) {
+      const budget = document.createElement('div');
+      budget.className = 'hint';
+      const pct = Math.round((program.spentMinor / program.budgetMinor) * 100);
+      budget.textContent =
+        money(program.spentMinor, program.budgetCurrencyCode) +
+        ' of ' +
+        money(program.budgetMinor, program.budgetCurrencyCode) +
+        ' committed (' +
+        pct +
+        '%)';
+      /* Past 90% a program is about to start refusing. Worth saying before it does. */
+      if (pct >= 90) budget.textContent += ' — nearly spent';
+      left.appendChild(budget);
+    }
+
+    row.appendChild(left);
+
+    const right = document.createElement('div');
+    right.appendChild(pill(program.status, program.status === 'active' ? 'ok' : 'none'));
+    row.appendChild(right);
+    return row;
+  }
+
+  async function loadDashboard() {
+    const rows = el('dashboardRows');
+    rows.innerHTML = '';
+    try {
+      const result = await window.api.request('/rewards/dashboard');
+      const items = result.data || [];
+      if (items.length === 0) {
+        show(el('dashboardMessage'), 'info', 'No programs yet.');
+        return;
+      }
+      el('dashboardMessage').innerHTML = '';
+      items.forEach(function (program) {
+        rows.appendChild(dashboardRow(program));
+      });
+    } catch (error) {
+      handle(error, el('dashboardMessage'));
     }
   }
 
@@ -244,30 +345,23 @@
 
   async function createRule() {
     if (!selectedProgram) return;
+    if (draftBenefits.length === 0) {
+      show(el('createRuleMessage'), 'error', 'A rule has to award something.');
+      return;
+    }
+
     const button = el('createRule');
     button.disabled = true;
     try {
-      const kind = el('benefitKind').value;
-      const mode = el('benefitMode').value;
-      const amount = Number(el('benefitAmount').value || 0);
-
-      const benefit = { benefitKind: kind, awardMode: mode, awardCap: null, config: {} };
-      if (kind === 'grant_points') {
-        benefit.config = { points: amount };
-      } else if (kind === 'grant_currency') {
-        benefit.config = {
-          minorUnits: amount,
-          currencyCode: (selectedProgram.defaultCurrencyCode || 'INR').toUpperCase(),
-        };
-      } else {
-        benefit.config = { itemRef: el('benefitItemRef').value.trim(), validForDays: null };
-      }
       /*
-       * "Up to" needs a ceiling for the factor to scale, and the amount field
-       * IS that ceiling. The server refuses up_to on a kind that cannot be
-       * divided, so an item never reaches here with it set.
+       * AN EMPTY WINDOW LIST MEANS ALWAYS, never never. So no condition is
+       * sent when nobody added one — sending an empty slots array would be a
+       * window that can never match.
        */
-      if (mode === 'up_to') benefit.awardCap = amount;
+      const conditions =
+        draftSlots.length > 0
+          ? [{ conditionKind: 'time_window', config: { slots: draftSlots } }]
+          : [];
 
       await window.api.request('/rewards/rules', {
         method: 'POST',
@@ -278,10 +372,14 @@
           capCount: 1,
           holdHours: Number(el('ruleHoldHours').value || 0),
           reversalPolicy: el('ruleReverse').checked ? 'on_content_deleted' : 'none',
-          benefits: [benefit],
+          conditions: conditions,
+          benefits: draftBenefits,
         },
       });
       show(el('createRuleMessage'), 'ok', 'Rule added.');
+      draftBenefits = [];
+      draftSlots = [];
+      renderDraft();
       await selectProgram(selectedProgram);
     } catch (error) {
       handle(error, el('createRuleMessage'));
@@ -411,6 +509,7 @@
         },
       });
       show(el('adjustMessage'), 'ok', 'Applied, and recorded against you.');
+      await loadDashboard();
       el('adjustAmount').value = '';
       el('adjustReason').value = '';
       await lookUp();
@@ -423,21 +522,164 @@
 
   /* ------------------------------------------------------------------ */
 
+  /* ------------------------------------------------------------------ */
+  /* Building a rule                                                     */
+  /* ------------------------------------------------------------------ */
+
+  function describeBenefit(benefit) {
+    const amount = benefit.awardMode === 'up_to' ? 'up to ' + benefit.awardCap : 'exactly ';
+    if (benefit.benefitKind === 'grant_points') {
+      return amount + (benefit.awardMode === 'up_to' ? ' points' : benefit.config.points + ' points');
+    }
+    if (benefit.benefitKind === 'grant_currency') {
+      return (
+        amount +
+        (benefit.awardMode === 'up_to' ? '' : benefit.config.minorUnits) +
+        ' ' +
+        benefit.config.currencyCode
+      );
+    }
+    if (benefit.benefitKind === 'convert_value') {
+      return (
+        benefit.config.burnPoints +
+        ' points become ' +
+        benefit.config.grantMinor +
+        ' ' +
+        benefit.config.currencyCode
+      );
+    }
+    return 'the item ' + benefit.config.itemRef;
+  }
+
+  function renderDraft() {
+    const benefitList = el('benefitList');
+    benefitList.innerHTML = '';
+    draftBenefits.forEach(function (benefit, index) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const left = document.createElement('div');
+      left.textContent = describeBenefit(benefit);
+      row.appendChild(left);
+      const remove = document.createElement('button');
+      remove.className = 'secondary';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', function () {
+        draftBenefits.splice(index, 1);
+        renderDraft();
+      });
+      row.appendChild(remove);
+      benefitList.appendChild(row);
+    });
+
+    const conditionList = el('conditionList');
+    conditionList.innerHTML = '';
+    draftSlots.forEach(function (slot, index) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const left = document.createElement('div');
+      const names = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const wraps = slot.start > slot.end ? ' (into the next day)' : '';
+      left.textContent =
+        slot.days.map((d) => names[d]).join(', ') +
+        ' · ' +
+        slot.start +
+        '–' +
+        slot.end +
+        wraps;
+      row.appendChild(left);
+      const remove = document.createElement('button');
+      remove.className = 'secondary';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', function () {
+        draftSlots.splice(index, 1);
+        renderDraft();
+      });
+      row.appendChild(remove);
+      conditionList.appendChild(row);
+    });
+  }
+
+  function addBenefit() {
+    const kind = el('benefitKind').value;
+    const mode = el('benefitMode').value;
+    const amount = Number(el('benefitAmount').value || 0);
+    const currency = (selectedProgram && selectedProgram.defaultCurrencyCode) || 'INR';
+
+    const benefit = { benefitKind: kind, awardMode: mode, awardCap: null, config: {} };
+
+    if (kind === 'grant_points') {
+      benefit.config = { points: amount };
+    } else if (kind === 'grant_currency') {
+      benefit.config = { minorUnits: amount, currencyCode: currency.toUpperCase() };
+    } else if (kind === 'convert_value') {
+      benefit.config = {
+        burnPoints: Number(el('benefitBurnPoints').value || 0),
+        grantMinor: amount,
+        currencyCode: currency.toUpperCase(),
+      };
+    } else {
+      benefit.config = { itemRef: el('benefitItemRef').value.trim(), validForDays: null };
+    }
+
+    /*
+     * "Up to" needs a ceiling for the factor to scale, and the amount field IS
+     * that ceiling. The server refuses it on a kind that cannot be divided, so
+     * the UI disables the option rather than letting somebody be rejected.
+     */
+    if (mode === 'up_to') {
+      benefit.awardCap = amount;
+      if (kind === 'grant_points') benefit.config.points = amount;
+      if (kind === 'grant_currency') benefit.config.minorUnits = amount;
+    }
+
+    draftBenefits.push(benefit);
+    renderDraft();
+  }
+
+  function addSlot() {
+    const days = Array.prototype.slice
+      .call(document.querySelectorAll('.slotDay:checked'))
+      .map(function (box) {
+        return Number(box.value);
+      });
+    if (days.length === 0) {
+      show(el('createRuleMessage'), 'error', 'Pick at least one day for the window.');
+      return;
+    }
+    draftSlots.push({
+      days: days,
+      start: el('slotStart').value,
+      end: el('slotEnd').value,
+    });
+    el('createRuleMessage').innerHTML = '';
+    renderDraft();
+  }
+
   function wireVisibility() {
     el('createProgramPanel').hidden = permissions.indexOf('rewards.manage') === -1;
 
     el('benefitKind').addEventListener('change', () => {
-      const isItem = el('benefitKind').value === 'issue_entitlement';
+      const kind = el('benefitKind').value;
+      const isItem = kind === 'issue_entitlement';
+      const isConvert = kind === 'convert_value';
       el('benefitItemRef').hidden = !isItem;
+      el('benefitBurnPoints').hidden = !isConvert;
       el('benefitAmount').hidden = isItem;
       /*
        * An item cannot be "up to" — six tenths of a free coffee is nothing.
        * The server refuses it; disabling the option here means nobody has to
        * discover that by being rejected.
        */
+      /*
+       * Neither an item nor a conversion can be "up to". Six tenths of a free
+       * coffee is nothing, and a conversion is a stated exchange rate — if a
+       * factor could shave it, 30 points would sometimes buy 50 rupees and
+       * sometimes 30, which is not a thing a business can explain.
+       */
       const mode = el('benefitMode');
-      mode.value = isItem ? 'fixed' : mode.value;
-      mode.disabled = isItem;
+      const fixedOnly = isItem || isConvert;
+      mode.value = fixedOnly ? 'fixed' : mode.value;
+      mode.disabled = fixedOnly;
     });
 
     el('adjustWalletKind').addEventListener('change', () => {
@@ -445,6 +687,8 @@
     });
 
     el('createProgram').addEventListener('click', createProgram);
+    el('addBenefit').addEventListener('click', addBenefit);
+    el('addSlot').addEventListener('click', addSlot);
     el('createRule').addEventListener('click', createRule);
     el('lookUp').addEventListener('click', lookUp);
     el('adjust').addEventListener('click', adjust);
@@ -468,7 +712,7 @@
       }
       wireVisibility();
       el('programTimezone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-      await loadPrograms();
+      await Promise.all([loadDashboard(), loadPrograms()]);
     } catch (error) {
       handle(error, el('programMessage'));
     }

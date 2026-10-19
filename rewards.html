@@ -17,6 +17,17 @@
 
   <main>
     <div class="panel">
+      <h2>How the programs are doing</h2>
+      <p class="hint">
+        Value is <em>net of anything taken back</em> &mdash; a clawed-back award stops counting, so
+        this is what the programs have actually cost rather than what they ever granted. Points and
+        each currency are shown separately and never added together.
+      </p>
+      <div id="dashboardMessage"></div>
+      <div id="dashboardRows"></div>
+    </div>
+
+    <div class="panel">
       <h2>Reward programs</h2>
       <p class="hint">
         A program says when it runs and what it can spend. Its rules say what a customer has to
@@ -70,11 +81,19 @@
         <input id="ruleHoldHours" type="number" min="0" max="720" value="24"
                title="Hours before the award becomes spendable" />
       </div>
+      <h3>What they get</h3>
+      <p class="hint">
+        A rule can award several things at once &mdash; 20 points <em>and</em> a free coffee. They
+        are applied together or not at all, so a customer is never told they earned both and
+        given one.
+      </p>
+      <div id="benefitList"></div>
       <div class="actions">
         <select id="benefitKind">
           <option value="grant_points">Points</option>
           <option value="grant_currency">Money</option>
           <option value="issue_entitlement">An item</option>
+          <option value="convert_value">Turn points into money</option>
         </select>
         <select id="benefitMode">
           <option value="fixed">Exactly</option>
@@ -82,7 +101,39 @@
         </select>
         <input id="benefitAmount" type="number" min="1" step="1" placeholder="20" />
         <input id="benefitItemRef" maxlength="64" placeholder="Item reference" hidden />
+        <input id="benefitBurnPoints" type="number" min="1" step="1" placeholder="Points to spend"
+               hidden />
+        <button class="secondary" id="addBenefit">Add</button>
       </div>
+
+      <h3>When it applies</h3>
+      <p class="hint">
+        Leave this empty and the rule applies whenever the trigger happens. Add a window and it
+        only applies inside those hours, in the program&rsquo;s own timezone.
+      </p>
+      <div id="conditionList"></div>
+      <div class="actions">
+        <span class="hint">Days</span>
+        <label class="hint"><input type="checkbox" class="slotDay" value="1" /> Mon</label>
+        <label class="hint"><input type="checkbox" class="slotDay" value="2" /> Tue</label>
+        <label class="hint"><input type="checkbox" class="slotDay" value="3" /> Wed</label>
+        <label class="hint"><input type="checkbox" class="slotDay" value="4" /> Thu</label>
+        <label class="hint"><input type="checkbox" class="slotDay" value="5" /> Fri</label>
+        <label class="hint"><input type="checkbox" class="slotDay" value="6" /> Sat</label>
+        <label class="hint"><input type="checkbox" class="slotDay" value="7" /> Sun</label>
+      </div>
+      <div class="actions">
+        <input id="slotStart" type="time" value="18:00" />
+        <span class="hint">to</span>
+        <input id="slotEnd" type="time" value="21:00" />
+        <button class="secondary" id="addSlot">Add window</button>
+      </div>
+      <p class="hint" id="slotHint">
+        A window ending before it starts runs past midnight &mdash; 22:00 to 02:00 is Friday night
+        and the first two hours of Saturday. Add several for one day if there is a lunch window
+        and a dinner window.
+      </p>
+
       <div class="actions">
         <label class="hint" for="ruleReverse">
           <input type="checkbox" id="ruleReverse" checked />
