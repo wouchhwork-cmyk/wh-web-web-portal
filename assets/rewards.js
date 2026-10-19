@@ -34,6 +34,16 @@
 
   const el = (id) => document.getElementById(id);
 
+  /*
+   * The list endpoints answer `{ items: [...] }`.
+   *
+   * The envelope interceptor lifts `items` onto `data` only for a PAGINATED
+   * payload — one carrying `pagination` — and the rewards lists carry none, so
+   * `data` stays the wrapping object. Reading `data` as an array here is what
+   * made every list on this page read as empty and then throw.
+   */
+  const itemsOf = (result) => (result.data && result.data.items) || [];
+
   let permissions = [];
   let selectedProgram = null;
   /* What the rule being built will carry. Cleared when the rule is created. */
@@ -186,7 +196,7 @@
     rows.innerHTML = '';
     try {
       const result = await window.api.request('/rewards/dashboard');
-      const items = result.data || [];
+      const items = itemsOf(result);
       if (items.length === 0) {
         show(el('dashboardMessage'), 'info', 'No programs yet.');
         return;
@@ -265,10 +275,10 @@
     try {
       /*
        * The envelope unwraps a controller returning { items } into { data },
-       * so the array is on .data rather than .items here.
+       * so the array is on .data.items — see itemsOf.
        */
       const result = await window.api.request('/rewards/programs');
-      const items = result.data || [];
+      const items = itemsOf(result);
       if (items.length === 0) {
         show(el('programMessage'), 'info', 'No programs yet.');
         return;
@@ -346,7 +356,7 @@
       const result = await window.api.request(
         '/rewards/rules?programRefId=' + encodeURIComponent(program.refId),
       );
-      const items = result.data || [];
+      const items = itemsOf(result);
       if (items.length === 0) {
         show(el('ruleMessage'), 'info', 'No rules yet. A program with no rules awards nothing.');
         return;
@@ -516,7 +526,7 @@
       const awards = await window.api.request(
         '/rewards/customers/' + encodeURIComponent(refId) + '/awards',
       );
-      (awards.data || []).forEach((award) => el('awardRows').appendChild(awardRow(award)));
+      itemsOf(awards).forEach((award) => el('awardRows').appendChild(awardRow(award)));
 
       el('adjustPanel').hidden = permissions.indexOf('rewards.adjust') === -1;
     } catch (error) {
@@ -774,9 +784,9 @@
     syncTriggerFields();
 
     try {
-      const me = await window.api.request('/auth/me');
+      const me = (await window.api.request('/auth/me')).data;
       permissions = me.permissions || [];
-      el('who').textContent = me.email || '';
+      el('who').textContent = me.enterprise ? me.enterprise.name : '';
       if (permissions.indexOf('rewards.view') === -1) {
         show(el('programMessage'), 'error', 'You do not have access to reward programs.');
         return;
