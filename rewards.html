@@ -41,16 +41,42 @@
     <div class="panel" id="createProgramPanel" hidden>
       <h2>New program</h2>
       <p class="hint">
-        The timezone decides when &ldquo;once a day&rdquo; resets and when a happy hour opens, so
-        set it to where the business actually is.
+        A program starts as a draft. Nothing it contains can award anything until you switch it on.
       </p>
-      <div class="actions">
-        <input id="programName" maxlength="120" placeholder="Programme name" />
-        <input id="programTimezone" maxlength="64" placeholder="Asia/Kolkata" />
-        <input id="programCurrency" maxlength="3" placeholder="INR" />
+      <div class="row">
+        <div>
+          <label for="programName">Program name</label>
+          <input id="programName" maxlength="120" placeholder="Monsoon loyalty" />
+          <span class="field-note">For you to recognise. Customers never see it.</span>
+        </div>
+        <div>
+          <label for="programTimezone">Timezone</label>
+          <input id="programTimezone" maxlength="64" placeholder="Asia/Kolkata" />
+          <span class="field-note">
+            Decides when &ldquo;once a day&rdquo; resets and when a happy hour opens. Set it to
+            where the business actually is &mdash; it cannot be changed casually later.
+          </span>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="programCurrency">Default currency</label>
+          <input id="programCurrency" maxlength="3" placeholder="INR" />
+          <span class="field-note">
+            Three-letter code. Used when a rule grants money without naming one. Leave empty for a
+            points-only program.
+          </span>
+        </div>
+        <div>
+          <label for="programBudget">Budget</label>
+          <input id="programBudget" type="number" min="0" step="1" placeholder="500000" />
+          <span class="field-note">
+            The most this program can ever spend, in minor units &mdash; 500000 is
+            &#8377;5,000.00. Empty means no ceiling.
+          </span>
+        </div>
       </div>
       <div class="actions">
-        <input id="programBudget" type="number" min="0" step="1" placeholder="Budget, in minor units (500000 = 5,000.00)" />
         <button id="createProgram">Create</button>
       </div>
       <div id="createProgramMessage"></div>
@@ -68,29 +94,52 @@
 
     <div class="panel" id="createRulePanel" hidden>
       <h2>New rule</h2>
-      <div class="actions">
-        <select id="ruleTrigger"></select>
-        <select id="ruleCapScope">
-          <option value="none">No cap</option>
-          <option value="day">Once a day</option>
-          <option value="week">Once a week</option>
-          <option value="month">Once a month</option>
-          <option value="year">Once a year</option>
-          <option value="lifetime">Once ever</option>
-        </select>
-        <input id="ruleHoldHours" type="number" min="0" max="720" value="24"
-               title="Hours before the award becomes spendable" />
+      <div class="row">
+        <div>
+          <label for="ruleTrigger">What the customer does</label>
+          <select id="ruleTrigger"></select>
+          <span class="field-note">The action that sets this rule off.</span>
+        </div>
+        <div>
+          <label for="ruleCapScope">How often it can pay out</label>
+          <select id="ruleCapScope">
+            <option value="none">No cap</option>
+            <option value="day">Once a day</option>
+            <option value="week">Once a week</option>
+            <option value="month">Once a month</option>
+            <option value="year">Once a year</option>
+            <option value="lifetime">Once ever</option>
+          </select>
+          <span class="field-note">
+            Per customer, counted in the program&rsquo;s timezone. Without a cap, somebody can
+            earn from this rule as often as they trigger it.
+          </span>
+        </div>
+        <div>
+          <label for="ruleHoldHours">Hold before it counts</label>
+          <input id="ruleHoldHours" type="number" min="0" max="720" value="24" />
+          <span class="field-note">
+            Hours to wait before the award is actually granted, which is also the window a deleted
+            or hidden post is taken back in. 0 grants straight away.
+          </span>
+        </div>
       </div>
       <!--
         Only for the balance trigger, and REQUIRED there: a threshold rule with
         no threshold is refused by the server, so the field appears with the
-        trigger rather than sitting empty next to the other twelve.
+        trigger rather than sitting empty next to the other thirteen.
       -->
       <div class="row" id="ruleThresholdRow" hidden>
-        <label for="ruleMinPointsBalance">Fires once the balance reaches</label>
-        <input id="ruleMinPointsBalance" type="number" min="1" max="10000000" value="100"
-               title="Points the customer must hold before this rule fires" />
+        <div>
+          <label for="ruleMinPointsBalance">Fires once the balance reaches</label>
+          <input id="ruleMinPointsBalance" type="number" min="1" max="10000000" value="100" />
+          <span class="field-note">
+            Points. Checked after any award that adds points, so it fires on the credit that takes
+            them to this number or past it.
+          </span>
+        </div>
       </div>
+
       <h3>What they get</h3>
       <p class="hint">
         A rule can award several things at once &mdash; 20 points <em>and</em> a free coffee. They
@@ -98,22 +147,52 @@
         given one.
       </p>
       <div id="benefitList"></div>
+      <div class="row">
+        <div>
+          <label for="benefitKind">Reward</label>
+          <select id="benefitKind">
+            <option value="grant_points">Points</option>
+            <option value="grant_currency">Money</option>
+            <option value="issue_entitlement">An item</option>
+            <option value="convert_value">Turn points into money</option>
+          </select>
+          <span class="field-note">
+            Points and money are separate balances. An item is a claim on something you hand over.
+          </span>
+        </div>
+        <div>
+          <label for="benefitMode">Exactly, or up to</label>
+          <select id="benefitMode">
+            <option value="fixed">Exactly</option>
+            <option value="up_to">Up to</option>
+          </select>
+          <span class="field-note">
+            &ldquo;Exactly&rdquo; is a promise and is never shaved. &ldquo;Up to&rdquo; is a
+            ceiling the scoring engine may scale down later.
+          </span>
+        </div>
+        <div id="benefitAmountField">
+          <label for="benefitAmount">Amount</label>
+          <input id="benefitAmount" type="number" min="1" step="1" placeholder="20" />
+          <span class="field-note">
+            Whole points, or money in minor units &mdash; 500 is &#8377;5.00.
+          </span>
+        </div>
+        <div id="benefitItemRefField" hidden>
+          <label for="benefitItemRef">Item reference</label>
+          <input id="benefitItemRef" maxlength="64" placeholder="FREE_COFFEE" />
+          <span class="field-note">Your own code for the thing being given.</span>
+        </div>
+        <div id="benefitBurnPointsField" hidden>
+          <label for="benefitBurnPoints">Points to spend</label>
+          <input id="benefitBurnPoints" type="number" min="1" step="1" placeholder="30" />
+          <span class="field-note">
+            Taken from the customer each time this converts. Nothing happens if they cannot cover it.
+          </span>
+        </div>
+      </div>
       <div class="actions">
-        <select id="benefitKind">
-          <option value="grant_points">Points</option>
-          <option value="grant_currency">Money</option>
-          <option value="issue_entitlement">An item</option>
-          <option value="convert_value">Turn points into money</option>
-        </select>
-        <select id="benefitMode">
-          <option value="fixed">Exactly</option>
-          <option value="up_to">Up to</option>
-        </select>
-        <input id="benefitAmount" type="number" min="1" step="1" placeholder="20" />
-        <input id="benefitItemRef" maxlength="64" placeholder="Item reference" hidden />
-        <input id="benefitBurnPoints" type="number" min="1" step="1" placeholder="Points to spend"
-               hidden />
-        <button class="secondary" id="addBenefit">Add</button>
+        <button class="secondary" id="addBenefit">Add reward</button>
       </div>
 
       <h3>When it applies</h3>
@@ -132,10 +211,21 @@
         <label class="hint"><input type="checkbox" class="slotDay" value="6" /> Sat</label>
         <label class="hint"><input type="checkbox" class="slotDay" value="7" /> Sun</label>
       </div>
+      <div class="row">
+        <div>
+          <label for="slotStart">From</label>
+          <input id="slotStart" type="time" value="18:00" />
+          <span class="field-note">Start of the window, in the program&rsquo;s timezone.</span>
+        </div>
+        <div>
+          <label for="slotEnd">To</label>
+          <input id="slotEnd" type="time" value="21:00" />
+          <span class="field-note">
+            End of it. Earlier than the start means it runs past midnight.
+          </span>
+        </div>
+      </div>
       <div class="actions">
-        <input id="slotStart" type="time" value="18:00" />
-        <span class="hint">to</span>
-        <input id="slotEnd" type="time" value="21:00" />
         <button class="secondary" id="addSlot">Add window</button>
       </div>
       <p class="hint" id="slotHint">
@@ -161,8 +251,16 @@
         granted nothing are listed too &mdash; that is what answers &ldquo;why didn&rsquo;t I get
         my points?&rdquo;
       </p>
+      <div class="row">
+        <div>
+          <label for="customerRefId">Customer reference id</label>
+          <input id="customerRefId" maxlength="40" placeholder="3f2a9c14-&hellip;" />
+          <span class="field-note">
+            The customer&rsquo;s reference id, copied from the customers page.
+          </span>
+        </div>
+      </div>
       <div class="actions">
-        <input id="customerRefId" maxlength="40" placeholder="Customer reference id" />
         <button class="secondary" id="lookUp">Look up</button>
       </div>
       <div id="balanceMessage"></div>
@@ -173,19 +271,44 @@
     <div class="panel" id="adjustPanel" hidden>
       <h2>Adjust a balance</h2>
       <p class="hint">
-        A manual credit or debit for one customer. It is recorded against you by name, in the
-        audit log and on the ledger entry, and a reason is required.
+        A manual credit or debit for the customer looked up above. It is recorded against you by
+        name, in the audit log and on the ledger entry, and a reason is required.
       </p>
-      <div class="actions">
-        <select id="adjustWalletKind">
-          <option value="points">Points</option>
-          <option value="currency">Money</option>
-        </select>
-        <input id="adjustCurrency" maxlength="3" placeholder="INR" hidden />
-        <input id="adjustAmount" type="number" step="1" placeholder="Negative to debit" />
+      <div class="row">
+        <div>
+          <label for="adjustWalletKind">Which balance</label>
+          <select id="adjustWalletKind">
+            <option value="points">Points</option>
+            <option value="currency">Money</option>
+          </select>
+          <span class="field-note">Points and money are held separately.</span>
+        </div>
+        <div id="adjustCurrencyField" hidden>
+          <label for="adjustCurrency">Currency</label>
+          <input id="adjustCurrency" maxlength="3" placeholder="INR" />
+          <span class="field-note">Three-letter code. Each currency is its own balance.</span>
+        </div>
+        <div>
+          <label for="adjustAmount">Amount</label>
+          <input id="adjustAmount" type="number" step="1" placeholder="-50" />
+          <span class="field-note">
+            Positive adds, negative takes away. Money is in minor units &mdash; 500 is
+            &#8377;5.00. A debit can take the balance below zero, and that is real debt the next
+            award pays off.
+          </span>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="adjustReason">Reason</label>
+          <input id="adjustReason" maxlength="255" placeholder="Goodwill after a wrong order" />
+          <span class="field-note">
+            Required, and kept. This is what somebody reads months later asking why the balance
+            moved.
+          </span>
+        </div>
       </div>
       <div class="actions">
-        <input id="adjustReason" maxlength="255" placeholder="Why" />
         <button id="adjust">Apply</button>
       </div>
       <div id="adjustMessage"></div>

@@ -740,9 +740,10 @@
       const kind = el('benefitKind').value;
       const isItem = kind === 'issue_entitlement';
       const isConvert = kind === 'convert_value';
-      el('benefitItemRef').hidden = !isItem;
-      el('benefitBurnPoints').hidden = !isConvert;
-      el('benefitAmount').hidden = isItem;
+      /* The WRAPPER, not the input: hiding the box alone strands its label. */
+      el('benefitItemRefField').hidden = !isItem;
+      el('benefitBurnPointsField').hidden = !isConvert;
+      el('benefitAmountField').hidden = isItem;
       /*
        * An item cannot be "up to" — six tenths of a free coffee is nothing.
        * The server refuses it; disabling the option here means nobody has to
@@ -761,7 +762,7 @@
     });
 
     el('adjustWalletKind').addEventListener('change', () => {
-      el('adjustCurrency').hidden = el('adjustWalletKind').value === 'points';
+      el('adjustCurrencyField').hidden = el('adjustWalletKind').value === 'points';
     });
 
     el('createProgram').addEventListener('click', createProgram);

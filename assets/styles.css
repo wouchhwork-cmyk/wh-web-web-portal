@@ -54,6 +54,17 @@ p.hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
 
 label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
 
+/* Says what a box is FOR, under the box. A placeholder disappears the moment
+   somebody types, which is exactly when they are least sure what they typed. */
+.field-note {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  margin: 5px 0 0;
+}
+
 input, select, textarea {
   width: 100%;
   padding: 9px 10px;
