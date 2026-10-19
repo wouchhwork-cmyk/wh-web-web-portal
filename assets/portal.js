@@ -91,6 +91,7 @@
       linkMentions: me.permissions.indexOf('conversations.view') !== -1,
       linkPosts: me.permissions.indexOf('posts.view') !== -1,
       linkCustomers: me.permissions.indexOf('customers.view') !== -1,
+      linkRewards: me.permissions.indexOf('rewards.view') !== -1,
       linkTeam: me.permissions.indexOf('employees.view') !== -1,
       linkConnections: me.permissions.indexOf('channels.view') !== -1,
     };

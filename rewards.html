@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reward programs · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:10px">Back</a>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel">
+      <h2>Reward programs</h2>
+      <p class="hint">
+        A program says when it runs and what it can spend. Its rules say what a customer has to
+        do, and what they get for it. A program is switched on separately from its dates &mdash;
+        one scheduled for next month is active with a start date in the future.
+      </p>
+      <div id="programMessage"></div>
+      <div id="programRows"></div>
+    </div>
+
+    <div class="panel" id="createProgramPanel" hidden>
+      <h2>New program</h2>
+      <p class="hint">
+        The timezone decides when &ldquo;once a day&rdquo; resets and when a happy hour opens, so
+        set it to where the business actually is.
+      </p>
+      <div class="actions">
+        <input id="programName" maxlength="120" placeholder="Programme name" />
+        <input id="programTimezone" maxlength="64" placeholder="Asia/Kolkata" />
+        <input id="programCurrency" maxlength="3" placeholder="INR" />
+      </div>
+      <div class="actions">
+        <input id="programBudget" type="number" min="0" step="1" placeholder="Budget, in minor units (500000 = 5,000.00)" />
+        <button id="createProgram">Create</button>
+      </div>
+      <div id="createProgramMessage"></div>
+    </div>
+
+    <div class="panel" id="rulesPanel" hidden>
+      <h2>Rules in <span id="rulesProgramName"></span></h2>
+      <p class="hint">
+        Rules are evaluated in priority order and several can fire on one event &mdash; a base
+        rule and a bonus rule both granting is intended, and each keeps its own cap.
+      </p>
+      <div id="ruleMessage"></div>
+      <div id="ruleRows"></div>
+    </div>
+
+    <div class="panel" id="createRulePanel" hidden>
+      <h2>New rule</h2>
+      <div class="actions">
+        <select id="ruleTrigger"></select>
+        <select id="ruleCapScope">
+          <option value="none">No cap</option>
+          <option value="day">Once a day</option>
+          <option value="week">Once a week</option>
+          <option value="month">Once a month</option>
+          <option value="year">Once a year</option>
+          <option value="lifetime">Once ever</option>
+        </select>
+        <input id="ruleHoldHours" type="number" min="0" max="720" value="24"
+               title="Hours before the award becomes spendable" />
+      </div>
+      <div class="actions">
+        <select id="benefitKind">
+          <option value="grant_points">Points</option>
+          <option value="grant_currency">Money</option>
+          <option value="issue_entitlement">An item</option>
+        </select>
+        <select id="benefitMode">
+          <option value="fixed">Exactly</option>
+          <option value="up_to">Up to</option>
+        </select>
+        <input id="benefitAmount" type="number" min="1" step="1" placeholder="20" />
+        <input id="benefitItemRef" maxlength="64" placeholder="Item reference" hidden />
+      </div>
+      <div class="actions">
+        <label class="hint" for="ruleReverse">
+          <input type="checkbox" id="ruleReverse" checked />
+          Take it back if the content is deleted or hidden
+        </label>
+        <button id="createRule">Add rule</button>
+      </div>
+      <div id="createRuleMessage"></div>
+    </div>
+
+    <div class="panel">
+      <h2>A customer&rsquo;s balance</h2>
+      <p class="hint">
+        Points and each currency are separate balances and are never added together. Awards that
+        granted nothing are listed too &mdash; that is what answers &ldquo;why didn&rsquo;t I get
+        my points?&rdquo;
+      </p>
+      <div class="actions">
+        <input id="customerRefId" maxlength="40" placeholder="Customer reference id" />
+        <button class="secondary" id="lookUp">Look up</button>
+      </div>
+      <div id="balanceMessage"></div>
+      <div id="balanceRows"></div>
+      <div id="awardRows"></div>
+    </div>
+
+    <div class="panel" id="adjustPanel" hidden>
+      <h2>Adjust a balance</h2>
+      <p class="hint">
+        A manual credit or debit for one customer. It is recorded against you by name, in the
+        audit log and on the ledger entry, and a reason is required.
+      </p>
+      <div class="actions">
+        <select id="adjustWalletKind">
+          <option value="points">Points</option>
+          <option value="currency">Money</option>
+        </select>
+        <input id="adjustCurrency" maxlength="3" placeholder="INR" hidden />
+        <input id="adjustAmount" type="number" step="1" placeholder="Negative to debit" />
+      </div>
+      <div class="actions">
+        <input id="adjustReason" maxlength="255" placeholder="Why" />
+        <button id="adjust">Apply</button>
+      </div>
+      <div id="adjustMessage"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/rewards.js"></script>
+</body>
+</html>
