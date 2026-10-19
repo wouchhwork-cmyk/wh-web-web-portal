@@ -22,7 +22,15 @@
     ['post_caption_mention', 'Named us in a caption — needs mention monitoring'],
     ['post_like', 'Liked our post — not available yet'],
     ['post_share', 'Shared our post — not available yet'],
+    /*
+     * Not a social action: the engine raises it after any credit that moves a
+     * points balance. It is what makes "30 points becomes ₹50" an ordinary
+     * rule, and it carries a threshold nothing else does.
+     */
+    ['points_balance_reached', 'Reached a points balance'],
   ];
+
+  const BALANCE_TRIGGER = 'points_balance_reached';
 
   const el = (id) => document.getElementById(id);
 
@@ -111,9 +119,16 @@
         ? 'nothing awarded yet'
         : program.value
             .map(function (v) {
+              /*
+               * `net` arrives as a STRING: int8 exceeds what a JS number holds
+               * safely, so the API hands back text rather than a silently
+               * rounded figure. Converted once, here, where it is about to be
+               * rendered and nothing arithmetic happens to it afterwards.
+               */
+              const net = Number(v.net);
               return v.walletKind === 'points'
-                ? Number(v.net) + ' points'
-                : money(Number(v.net), v.currencyCode);
+                ? net + ' points'
+                : money(net, v.currencyCode);
             })
             .join(' · ');
     left.appendChild(value);
@@ -368,6 +383,7 @@
         body: {
           programRefId: selectedProgram.refId,
           triggerKind: el('ruleTrigger').value,
+          triggerConfig: triggerConfigFromForm(),
           capScope: el('ruleCapScope').value,
           capCount: 1,
           holdHours: Number(el('ruleHoldHours').value || 0),
@@ -386,6 +402,21 @@
     } finally {
       button.disabled = false;
     }
+  }
+
+  /*
+   * The threshold, and only for the trigger that takes one.
+   *
+   * The server refuses `minPointsBalance` on any other trigger and refuses its
+   * absence on this one, so sending it unconditionally would 400 every rule.
+   */
+  function triggerConfigFromForm() {
+    if (el('ruleTrigger').value !== BALANCE_TRIGGER) return {};
+    return { minPointsBalance: Number(el('ruleMinPointsBalance').value || 0) };
+  }
+
+  function syncTriggerFields() {
+    el('ruleThresholdRow').hidden = el('ruleTrigger').value !== BALANCE_TRIGGER;
   }
 
   /* ------------------------------------------------------------------ */
@@ -603,6 +634,27 @@
     const kind = el('benefitKind').value;
     const mode = el('benefitMode').value;
     const amount = Number(el('benefitAmount').value || 0);
+
+    /*
+     * Caught here rather than left to the server. Every amount schema requires
+     * a positive number, so a blank field becomes a 422 that says "too small"
+     * about a field the person has not filled in — which reads like a bug
+     * rather than an instruction.
+     */
+    if (kind === 'issue_entitlement') {
+      if (!el('benefitItemRef').value.trim()) {
+        show(el('createRuleMessage'), 'error', 'Give the item a reference.');
+        return;
+      }
+    } else if (amount < 1) {
+      show(el('createRuleMessage'), 'error', 'Enter how much this awards.');
+      return;
+    }
+    if (kind === 'convert_value' && Number(el('benefitBurnPoints').value || 0) < 1) {
+      show(el('createRuleMessage'), 'error', 'Enter how many points a conversion spends.');
+      return;
+    }
+    el('createRuleMessage').innerHTML = '';
     const currency = (selectedProgram && selectedProgram.defaultCurrencyCode) || 'INR';
 
     const benefit = { benefitKind: kind, awardMode: mode, awardCap: null, config: {} };
@@ -646,11 +698,27 @@
       show(el('createRuleMessage'), 'error', 'Pick at least one day for the window.');
       return;
     }
-    draftSlots.push({
-      days: days,
-      start: el('slotStart').value,
-      end: el('slotEnd').value,
-    });
+    const start = el('slotStart').value;
+    const end = el('slotEnd').value;
+    if (!start || !end) {
+      show(el('createRuleMessage'), 'error', 'Give the window a start and an end time.');
+      return;
+    }
+    /*
+     * Equal times are the one case neither side can interpret: it is either an
+     * empty window or a 24-hour one, and guessing either way would be wrong
+     * half the time. The server treats start < end as a normal window and
+     * start > end as a wrap, so equality has no meaning.
+     */
+    if (start === end) {
+      show(
+        el('createRuleMessage'),
+        'error',
+        'A window has to start and end at different times. For all day, leave the windows empty.',
+      );
+      return;
+    }
+    draftSlots.push({ days: days, start: start, end: end });
     el('createRuleMessage').innerHTML = '';
     renderDraft();
   }
@@ -695,12 +763,15 @@
   }
 
   async function start() {
+    el('ruleTrigger').addEventListener('change', syncTriggerFields);
     TRIGGERS.forEach(function (trigger) {
       const option = document.createElement('option');
       option.value = trigger[0];
       option.textContent = trigger[1];
       el('ruleTrigger').appendChild(option);
     });
+    /* The select now holds a value; make the form agree with it. */
+    syncTriggerFields();
 
     try {
       const me = await window.api.request('/auth/me');

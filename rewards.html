@@ -81,6 +81,16 @@
         <input id="ruleHoldHours" type="number" min="0" max="720" value="24"
                title="Hours before the award becomes spendable" />
       </div>
+      <!--
+        Only for the balance trigger, and REQUIRED there: a threshold rule with
+        no threshold is refused by the server, so the field appears with the
+        trigger rather than sitting empty next to the other twelve.
+      -->
+      <div class="row" id="ruleThresholdRow" hidden>
+        <label for="ruleMinPointsBalance">Fires once the balance reaches</label>
+        <input id="ruleMinPointsBalance" type="number" min="1" max="10000000" value="100"
+               title="Points the customer must hold before this rule fires" />
+      </div>
       <h3>What they get</h3>
       <p class="hint">
         A rule can award several things at once &mdash; 20 points <em>and</em> a free coffee. They
