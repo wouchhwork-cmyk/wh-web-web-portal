@@ -2,32 +2,42 @@
   if (!window.api.requireSession()) return;
 
   /*
-   * The trigger list mirrors RewardTriggerKind on the server. Two are listed
-   * with a warning rather than hidden: post_caption_mention needs mention
-   * monitoring, and post_like needs the like actor to be captured at all.
-   * Hiding them would make a rule that cannot fire indistinguishable from one
-   * nobody has written yet.
+   * The trigger list mirrors RewardTriggerKind on the server, and the third
+   * column is the one that matters: CAN IT ACTUALLY FIRE TODAY.
+   *
+   * Only four triggers have a producer. The projector derives the trigger from
+   * the CONVERSATION KIND, which knows three, plus the balance threshold the
+   * engine raises itself. Everything else is modelled, accepted and saved by
+   * the API — and never raised by anything.
+   *
+   * They stay listed rather than hidden, because a trigger nobody has built is
+   * worth seeing, but they cannot be CHOSEN. A rule that can never fire should
+   * not be creatable: saving one looks like success and produces silence, which
+   * is how a programme called "dm loyalty" ends up listening for story mentions
+   * and awarding nothing.
    */
   const TRIGGERS = [
-    ['story_mention', 'Mentioned us in their story'],
-    ['story_reply', 'Replied to our story'],
-    ['comment_on_own_post', 'Commented on our post'],
-    ['comment_on_mentioned_post', 'Commented on a post tagging us'],
-    ['post_tagging_us', 'Posted and tagged us'],
-    ['direct_message_inbound', 'Sent us a direct message'],
-    ['message_reaction', 'Reacted to our message'],
-    ['postback_tapped', 'Tapped a button'],
-    ['opt_in_granted', 'Opted in'],
-    ['referral_entry', 'Arrived from an ad, link or QR code'],
-    ['post_caption_mention', 'Named us in a caption — needs mention monitoring'],
-    ['post_like', 'Liked our post — not available yet'],
-    ['post_share', 'Shared our post — not available yet'],
+    ['direct_message_inbound', 'Sent us a direct message', true],
+    ['comment_on_own_post', 'Commented on our post', true],
+    ['comment_on_mentioned_post', 'Commented on a post tagging us', true],
     /*
      * Not a social action: the engine raises it after any credit that moves a
-     * points balance. It is what makes "30 points becomes ₹50" an ordinary
+     * points balance. It is what makes "30 points becomes RS 50" an ordinary
      * rule, and it carries a threshold nothing else does.
      */
-    ['points_balance_reached', 'Reached a points balance'],
+    ['points_balance_reached', 'Reached a points balance', true],
+
+    /* No producer. Listed so they are visible, disabled so they are not traps. */
+    ['story_mention', 'Mentioned us in their story', false],
+    ['story_reply', 'Replied to our story', false],
+    ['post_tagging_us', 'Posted and tagged us', false],
+    ['message_reaction', 'Reacted to our message', false],
+    ['postback_tapped', 'Tapped a button', false],
+    ['opt_in_granted', 'Opted in', false],
+    ['referral_entry', 'Arrived from an ad, link or QR code', false],
+    ['post_caption_mention', 'Named us in a caption', false],
+    ['post_like', 'Liked our post', false],
+    ['post_share', 'Shared our post', false],
   ];
 
   const BALANCE_TRIGGER = 'points_balance_reached';
@@ -778,7 +788,13 @@
     TRIGGERS.forEach(function (trigger) {
       const option = document.createElement('option');
       option.value = trigger[0];
-      option.textContent = trigger[1];
+      option.textContent = trigger[2] ? trigger[1] : trigger[1] + ' — not built yet';
+      /*
+       * Disabled, not hidden. The first option is whatever the browser selects
+       * by default, so a dead trigger at the top of this list is a rule that
+       * silently never fires — which is exactly what happened twice.
+       */
+      option.disabled = !trigger[2];
       el('ruleTrigger').appendChild(option);
     });
     /* The select now holds a value; make the form agree with it. */
