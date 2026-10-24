@@ -348,11 +348,26 @@
     }
 
     /*
-     * KEPT FOR AN ARCHIVED PROGRAMME TOO, and placed before the early return
-     * below for exactly that reason: a retired programme is a record, and
-     * "what was this awarding last March" is the question the record exists
-     * to answer.
+     * VIEW AND HISTORY ARE BOTH READ-ONLY, so both sit before the early return
+     * below and an ARCHIVED programme keeps them. A retired programme is a
+     * record: "what was this configured to do" and "what did it look like last
+     * March" are the questions the record exists to answer, and neither of
+     * them changes anything.
      */
+    const view = document.createElement('button');
+    view.className = 'secondary';
+    view.textContent = 'View';
+    view.title = 'Everything this programme is set to do, read only.';
+    view.addEventListener('click', () => openProgramView(program));
+    right.appendChild(view);
+
+    const people = document.createElement('button');
+    people.className = 'secondary';
+    people.textContent = 'Beneficiaries';
+    people.title = 'Everyone this programme has rewarded.';
+    people.addEventListener('click', () => openBeneficiaries(program));
+    right.appendChild(people);
+
     const history = document.createElement('button');
     history.className = 'secondary';
     history.textContent = 'History';
@@ -525,9 +540,13 @@
     el('toggleArchived').textContent = showingArchived
       ? 'Back to active programs'
       : 'View archived';
-    /* Creating a programme while looking at retired ones makes no sense. */
-    el('createProgramPanel').hidden =
-      showingArchived || permissions.indexOf('rewards.manage') === -1;
+    /*
+     * Creating or editing a programme while looking at retired ones makes no
+     * sense, so the button goes away with the list it belongs to. The FORM is
+     * not touched here any more — it is opened by "New program" or by
+     * "Update", and this would otherwise reopen it on every list refresh.
+     */
+    el('newProgram').hidden = showingArchived || permissions.indexOf('rewards.manage') === -1;
 
     try {
       /*
@@ -626,12 +645,314 @@
               '. Switch it on when you are ready.',
       );
       resetProgramForm();
+      /* Shut once it has been saved. Leaving a blank form open afterwards is
+       * how a business ends up looking at a form rather than at what it just
+       * made; the confirmation moves to the list it was added to. */
+      el('createProgramPanel').hidden = true;
+      el('programMessage').innerHTML = target.innerHTML;
+      target.innerHTML = '';
       await Promise.all([loadPrograms(), loadDashboard()]);
     } catch (error) {
       handle(error, target);
     } finally {
       button.disabled = false;
     }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Reading one programme                                               */
+  /* ------------------------------------------------------------------ */
+
+  function setting(name, value) {
+    const row = document.createElement('div');
+    row.className = 'setting';
+
+    const left = document.createElement('div');
+    left.className = 'setting-name';
+    left.textContent = name;
+    row.appendChild(left);
+
+    const right = document.createElement('div');
+    right.className = 'setting-value';
+    if (value instanceof Node) right.appendChild(value);
+    else right.textContent = value;
+    row.appendChild(right);
+
+    return row;
+  }
+
+  const DAY_NAMES = {};
+  DAYS.forEach(function (day) {
+    DAY_NAMES[day[0]] = day[1];
+  });
+
+  /** A benefit as a sentence, using the business's currency for money. */
+  function describeReward(benefit) {
+    const config = benefit.config || {};
+    const upTo = benefit.awardMode === 'up_to';
+    if (benefit.benefitKind === 'grant_points') {
+      return (upTo ? 'Up to ' : '') + config.points + ' points';
+    }
+    if (benefit.benefitKind === 'grant_currency') {
+      return (
+        (upTo ? 'Up to ' : '') + money(config.minorUnits, config.currencyCode || BUSINESS_CURRENCY)
+      );
+    }
+    if (benefit.benefitKind === 'convert_value') {
+      /* Said as the slab it is, because "20" and "200" side by side read as a
+       * rate and are not one — a balance of 50 converts twice and keeps 10. */
+      return (
+        'Every ' +
+        config.burnPoints +
+        ' points becomes ' +
+        money(config.grantMinor, config.currencyCode || BUSINESS_CURRENCY)
+      );
+    }
+    return 'The item ' + config.itemRef;
+  }
+
+  /** The schedule as a person would read it back. */
+  function describeSchedule(schedule) {
+    const days = (schedule && schedule.days) || [];
+    if (days.length === 0) return 'Any day, any time';
+
+    const list = document.createElement('div');
+    days.forEach(function (day) {
+      const line = document.createElement('div');
+      line.textContent =
+        (DAY_NAMES[day.isoDay] || 'Day ' + day.isoDay) +
+        ' — ' +
+        (day.slots.length === 0
+          ? 'all day'
+          : day.slots
+              .map(function (slot) {
+                return slot.start + '–' + slot.end;
+              })
+              .join(', '));
+      list.appendChild(line);
+    });
+    return list;
+  }
+
+  /**
+   * Everything a programme is set to do, read only.
+   *
+   * THE SAME READ THE EDIT FORM USES. One endpoint describing a programme
+   * means the screen that shows it and the screen that changes it cannot
+   * disagree about what it says — and an archived programme, which can never
+   * be edited again, still has somewhere to be read.
+   */
+  async function openProgramView(program) {
+    const panel = el('programViewPanel');
+    const host = el('viewRows');
+    el('viewProgramName').textContent = program.name;
+    host.innerHTML = '';
+    panel.hidden = false;
+
+    try {
+      const result = await window.api.request(
+        '/rewards/programs/' + encodeURIComponent(program.refId) + '/configuration',
+      );
+      const config = (result && result.data) || {};
+
+      host.appendChild(setting('Internal name', config.name || '—'));
+      host.appendChild(
+        setting('Customers see', config.displayName || 'Not chosen yet — they would see nothing'),
+      );
+      host.appendChild(setting('Status', config.status || '—'));
+      host.appendChild(setting('Version', 'v' + (config.version || 1)));
+
+      const triggers = (config.triggers || []).map(function (key) {
+        const found = TRIGGERS.find(function (t) {
+          return t.key === key;
+        });
+        return found ? found.label : key;
+      });
+      host.appendChild(
+        setting(
+          'Sets it off',
+          triggers.length > 0 ? triggers.join(', ') : 'Nothing — it awards nothing',
+        ),
+      );
+      if (config.minPointsBalance) {
+        host.appendChild(setting('Fires at a balance of', config.minPointsBalance + ' points'));
+      }
+
+      host.appendChild(
+        setting(
+          'How often it can pay out',
+          config.capScope === 'none'
+            ? 'No cap — as often as it is triggered'
+            : config.capCount + ' per ' + config.capScope + ', per customer',
+        ),
+      );
+      host.appendChild(
+        setting(
+          'Held before granting',
+          config.holdHours > 0 ? config.holdHours + ' hours' : 'Granted immediately',
+        ),
+      );
+
+      host.appendChild(
+        setting(
+          'Runs from',
+          (config.schedule && config.schedule.startsAt
+            ? dateOnly(config.schedule.startsAt)
+            : 'Already running') +
+            ' to ' +
+            (config.schedule && config.schedule.endsAt
+              ? dateOnly(config.schedule.endsAt)
+              : 'no end'),
+        ),
+      );
+      host.appendChild(setting('When', describeSchedule(config.schedule)));
+
+      const rewards = document.createElement('div');
+      const benefits = config.benefits || [];
+      if (benefits.length === 0) {
+        rewards.textContent = 'Nothing — it awards nothing';
+      } else {
+        benefits.forEach(function (benefit) {
+          const line = document.createElement('div');
+          line.textContent = describeReward(benefit);
+          rewards.appendChild(line);
+        });
+      }
+      host.appendChild(setting('What they get', rewards));
+
+      host.appendChild(
+        setting(
+          'Where the value goes',
+          config.destination === 'external'
+            ? 'Marked for an external system — recorded only; nothing is sent yet'
+            : 'Kept in Wouchh',
+        ),
+      );
+
+      /* Stated here too, because this is the screen somebody reads before
+       * deciding to edit — and the edit is where the flattening would happen. */
+      if (config.uniform === false) {
+        host.appendChild(
+          setting(
+            'Note',
+            'This programme’s rules do not all share the same cap and hold. The values above are ' +
+              'from one of them.',
+          ),
+        );
+      }
+
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      panel.hidden = true;
+      handle(error, el('programMessage'));
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Who a programme rewarded                                            */
+  /* ------------------------------------------------------------------ */
+
+  /*
+   * WHERE THE NEXT PAGE STARTS, and which programme it belongs to.
+   *
+   * Both, because a cursor on its own is a cursor into whichever list was
+   * open last — opening a second programme while the first still had pages
+   * left would page through one programme's beneficiaries under the other
+   * one's heading.
+   */
+  let peopleProgramRefId = null;
+  let peopleCursor = null;
+
+  function beneficiaryRow(person) {
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const left = document.createElement('div');
+    const name = document.createElement('strong');
+    /* A customer with no name is normal — they arrived through a platform that
+     * gave us a handle and nothing else — so the absence is stated. */
+    name.textContent = person.displayName || 'Unnamed customer';
+    left.appendChild(name);
+
+    const meta = document.createElement('div');
+    meta.className = 'hint';
+    meta.textContent = 'Last rewarded ' + when(person.lastAwardedAt);
+    left.appendChild(meta);
+    row.appendChild(left);
+
+    const right = document.createElement('div');
+    right.appendChild(pill(person.granted + ' granted', person.granted > 0 ? 'ok' : 'none'));
+    /* Shown only when there are any: three pills reading zero on every row is
+     * noise that hides the one row where it is not zero. */
+    if (person.held > 0) right.appendChild(pill(person.held + ' held', 'none'));
+    if (person.reversed > 0) {
+      /* `suspended` is the red variant this stylesheet already defines. A
+       * made-up class name renders as an unstyled pill, which reads as if
+       * nothing was taken back. */
+      right.appendChild(pill(person.reversed + ' taken back', 'suspended'));
+    }
+    row.appendChild(right);
+
+    return row;
+  }
+
+  /**
+   * Opens the list, or appends the next page of it.
+   *
+   * ONE FUNCTION FOR BOTH, because they differ only in whether the rows are
+   * cleared first — and two functions would be two places to keep the cursor
+   * handling right.
+   */
+  async function loadBeneficiaries(append) {
+    const button = el('morePeople');
+    button.disabled = true;
+    try {
+      const query = peopleCursor === null ? '' : '?cursor=' + encodeURIComponent(peopleCursor);
+      const result = await window.api.request(
+        '/rewards/programs/' + encodeURIComponent(peopleProgramRefId) + '/beneficiaries' + query,
+      );
+
+      /* A paginated payload arrives with its items lifted onto `data` and its
+       * pagination in `meta` — unlike the unpaginated lists on this page,
+       * which keep `{ items }` inside `data`. */
+      const rows = (result && result.data) || [];
+      const pagination = (result && result.meta && result.meta.pagination) || {};
+
+      const host = el('peopleRows');
+      if (!append) host.innerHTML = '';
+      rows.forEach(function (person) {
+        host.appendChild(beneficiaryRow(person));
+      });
+
+      if (host.children.length === 0) {
+        show(el('peopleMessage'), 'info', 'Nobody has been rewarded by this program yet.');
+      } else {
+        el('peopleMessage').innerHTML = '';
+      }
+
+      peopleCursor = pagination.nextCursor || null;
+      button.hidden = !pagination.hasMore;
+    } catch (error) {
+      handle(error, el('peopleMessage'));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function openBeneficiaries(program) {
+    /* Reset before the request, not after: leaving the previous programme's
+     * cursor in place while this one loads is how page two of the wrong list
+     * ends up under this heading. */
+    peopleProgramRefId = program.refId;
+    peopleCursor = null;
+    el('peopleProgramName').textContent = program.name;
+    el('peopleMessage').innerHTML = '';
+    el('peopleRows').innerHTML = '';
+    el('morePeople').hidden = true;
+    el('peoplePanel').hidden = false;
+
+    await loadBeneficiaries(false);
+    el('peoplePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   /**
@@ -653,6 +974,8 @@
       const config = (result && result.data) || {};
 
       resetProgramForm();
+      el('programViewPanel').hidden = true;
+      el('createProgramPanel').hidden = false;
       editingRefId = program.refId;
       el('programFormTitle').textContent = 'Update ' + config.name;
       el('createProgram').textContent = 'Update program';
@@ -1499,6 +1822,27 @@
     const rows = document.querySelectorAll('#rewardRows .reward-row');
     const digits = currencyDigits(BUSINESS_CURRENCY);
 
+    /*
+     * ONE ROW PER EFFECT, claimed in order.
+     *
+     * Two "points" rows are not two rewards — they are one reward of the sum,
+     * written twice, giving a business two lines to maintain for one effect.
+     * The server refuses it; taking the option away is why nobody tries.
+     *
+     * FIRST COME, FIRST SERVED, which is why this walks the rows in order
+     * rather than computing "used by everybody else" per row. With the latter,
+     * two rows holding the same kind would each see the other holding it and
+     * BOTH would move — the row that was there first would lose its answer to
+     * the row that was just added.
+     *
+     * The form never sets a per-reward currency, so an effect here is just its
+     * kind. The contract keys on kind PLUS wallet, because two currency grants
+     * in different currencies are genuinely two rewards; nothing on this
+     * screen can produce that case yet.
+     */
+    const taken = new Set();
+    let selectable = 0;
+
     rows.forEach(function (row) {
       const kind = row.querySelector('.rewardKind');
 
@@ -1509,8 +1853,24 @@
           requires.some(function (t) {
             return chosen.indexOf(t) !== -1;
           });
-        option.disabled = option.dataset.available !== 'true' || !triggerOk;
+        const offerable = option.dataset.available === 'true' && triggerOk;
+        option.disabled = !offerable || taken.has(option.value);
       });
+
+      /* How many kinds could be chosen at all, counted once: it is what the
+       * plus button stops at. Read before `taken` grows past this row. */
+      if (selectable === 0) {
+        selectable = Array.prototype.filter.call(kind.options, function (o) {
+          const requires = o.dataset.requires ? o.dataset.requires.split(',') : [];
+          return (
+            o.dataset.available === 'true' &&
+            (requires.length === 0 ||
+              requires.some(function (t) {
+                return chosen.indexOf(t) !== -1;
+              }))
+          );
+        }).length;
+      }
 
       /*
        * A SELECTION THAT HAS JUST BECOME INVALID IS MOVED, not left sitting
@@ -1527,6 +1887,7 @@
       }
 
       const chosenKind = kind.value;
+      if (chosenKind) taken.add(chosenKind);
       const isConvert = chosenKind === 'convert_value';
       const isMoney = chosenKind === 'grant_currency';
       const isPoints = chosenKind === 'grant_points';
@@ -1572,7 +1933,18 @@
       row.querySelector('.reward-remove').disabled = rows.length === 1;
     });
 
-    el('addReward').disabled = rows.length >= MAX_REWARDS_PER_PROGRAM;
+    /*
+     * THE PLUS STOPS WHERE THE CHOICES DO. A row that could only repeat an
+     * effect already chosen is a row whose dropdown would be entirely
+     * disabled — offering it and then refusing every option in it is the form
+     * disagreeing with itself.
+     */
+    const addButton = el('addReward');
+    const exhausted = selectable > 0 && rows.length >= selectable;
+    addButton.disabled = exhausted || rows.length >= MAX_REWARDS_PER_PROGRAM;
+    addButton.title = exhausted
+      ? 'Every kind of reward this program can give is already on the form.'
+      : 'Add another reward';
   }
 
   /**
@@ -1704,7 +2076,18 @@
   }
 
   function wireVisibility() {
-    el('createProgramPanel').hidden = permissions.indexOf('rewards.manage') === -1;
+    /*
+     * THE FORM STAYS SHUT UNTIL SOMEBODY ASKS FOR IT.
+     *
+     * It used to be open on every visit, so the page a business sees when it
+     * wants to check a programme was mostly a blank form for making another
+     * one. It is a long form, it pushed the list of programmes off the screen,
+     * and nothing on the page had asked for it.
+     *
+     * What permission controls now is the BUTTON that opens it; the panel
+     * itself is opened by "New program" or by "Update" on a row.
+     */
+    el('newProgram').hidden = permissions.indexOf('rewards.manage') === -1;
 
     el('addReward').addEventListener('click', function () {
       el('rewardRows').appendChild(rewardRow());
@@ -1741,6 +2124,28 @@
       if (event.key === 'Escape') setTriggerMenuOpen(false);
     });
 
+    el('newProgram').addEventListener('click', function () {
+      /* Fresh every time: a form left holding the last programme is how the
+       * next "new programme" quietly becomes an edit of it. */
+      resetProgramForm();
+      el('createProgramMessage').innerHTML = '';
+      el('programViewPanel').hidden = true;
+      el('createProgramPanel').hidden = false;
+      el('createProgramPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el('programName').focus();
+    });
+
+    el('closeView').addEventListener('click', function () {
+      el('programViewPanel').hidden = true;
+    });
+
+    el('closePeople').addEventListener('click', function () {
+      el('peoplePanel').hidden = true;
+    });
+    el('morePeople').addEventListener('click', function () {
+      void loadBeneficiaries(true);
+    });
+
     el('createProgram').addEventListener('click', createProgram);
     /* Abandons an edit without saving it, and puts the form back to creating
      * — leaving it half-filled with somebody else's programme is how the next
@@ -1748,12 +2153,18 @@
     el('cancelEdit').addEventListener('click', function () {
       resetProgramForm();
       el('createProgramMessage').innerHTML = '';
+      el('createProgramPanel').hidden = true;
     });
     el('toggleArchived').addEventListener('click', async () => {
       showingArchived = !showingArchived;
-      /* An edit begun in one view should not carry into the other — the
-       * programme it refers to may not even be listed there. */
-      if (editingRefId !== null) resetProgramForm();
+      /* Neither panel should outlive the list it was opened from — the
+       * programme either refers to may not even be listed in the other view. */
+      el('programViewPanel').hidden = true;
+      el('peoplePanel').hidden = true;
+      if (editingRefId !== null) {
+        resetProgramForm();
+        el('createProgramPanel').hidden = true;
+      }
       await loadPrograms();
     });
     el('lookUp').addEventListener('click', lookUp);

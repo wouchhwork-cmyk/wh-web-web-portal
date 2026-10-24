@@ -105,6 +105,24 @@ button:disabled { opacity: 0.55; cursor: default; }
  */
 [hidden] { display: none !important; }
 
+/* A panel's title with its own controls beside it, rather than a bar of
+ * buttons floating above the list they act on. */
+.panel-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.panel-head h2 { margin: 0; }
+.panel-actions { display: flex; gap: 8px; align-items: center; }
+
+/* One configured setting: its name, then what it is set to. */
+.setting { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.setting:last-child { border-bottom: none; }
+.setting > .setting-name { flex: 0 0 210px; color: var(--muted, #667); }
+.setting > .setting-value { flex: 1 1 auto; }
+
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1 1 160px; }
 .actions { margin-top: 18px; display: flex; gap: 10px; align-items: center; }

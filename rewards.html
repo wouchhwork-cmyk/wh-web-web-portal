@@ -28,7 +28,13 @@
     </div>
 
     <div class="panel">
-      <h2 id="programsHeading">Reward programs</h2>
+      <div class="panel-head">
+        <h2 id="programsHeading">Reward programs</h2>
+        <div class="panel-actions">
+          <button class="secondary" id="toggleArchived">View archived</button>
+          <button id="newProgram" hidden>New program</button>
+        </div>
+      </div>
       <p class="hint">
         A program says when it runs and what it can spend. Its rules say what a customer has to
         do, and what they get for it. A program is switched on separately from its dates &mdash;
@@ -39,11 +45,42 @@
         immediately and is kept as a record of what ran and what it cost. That cannot be undone,
         so an archived program can never be switched back on.
       </p>
-      <div class="actions">
-        <button class="secondary" id="toggleArchived">View archived</button>
-      </div>
       <div id="programMessage"></div>
       <div id="programRows"></div>
+    </div>
+
+    <div class="panel" id="programViewPanel" hidden>
+      <div class="panel-head">
+        <h2>Settings of <span id="viewProgramName"></span></h2>
+        <div class="panel-actions">
+          <button class="secondary" id="closeView">Close</button>
+        </div>
+      </div>
+      <p class="hint">
+        Everything this program is configured to do, as it stands now. Read only &mdash; use
+        <strong>Update</strong> to change any of it.
+      </p>
+      <div id="viewRows"></div>
+    </div>
+
+    <div class="panel" id="peoplePanel" hidden>
+      <div class="panel-head">
+        <h2>Rewarded by <span id="peopleProgramName"></span></h2>
+        <div class="panel-actions">
+          <button class="secondary" id="closePeople">Close</button>
+        </div>
+      </div>
+      <p class="hint">
+        Everyone this program has rewarded, most recent first &mdash; how many awards it granted
+        them, how many it is still holding, and how many it took back. People it <em>refused</em>
+        are not here: a capped or unqualified attempt is somebody who got nothing.
+        To look one customer up, use the balance search further down.
+      </p>
+      <div id="peopleMessage"></div>
+      <div id="peopleRows"></div>
+      <div class="actions">
+        <button class="secondary" id="morePeople" hidden>Load more</button>
+      </div>
     </div>
 
     <div class="panel" id="createProgramPanel" hidden>
