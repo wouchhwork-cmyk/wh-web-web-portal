@@ -49,70 +49,54 @@
     <div class="panel" id="createProgramPanel" hidden>
       <h2>New program</h2>
       <p class="hint">
-        A program starts as a draft. Nothing it contains can award anything until you switch it on.
+        One form, one save. The whole programme &mdash; what sets it off, how often it may pay,
+        when it runs and what it gives &mdash; is created together or not at all, so there is no
+        half-built programme sitting there awarding nothing.
       </p>
+      <p class="hint">It starts as a draft. Nothing it contains awards anything until you switch it on.</p>
+
       <div class="row">
         <div>
           <label for="programName">Internal name</label>
           <input id="programName" maxlength="120" placeholder="Monsoon loyalty v2" />
           <span class="field-note">
-            For you to recognise, and <strong>no two programmes here can share one</strong> &mdash;
-            that is what makes it possible to say which you mean. Customers never see it, so
-            &ldquo;v2&rdquo; and &ldquo;old one&rdquo; are fine.
+            For you to recognise, and <strong>no two programmes here can share one</strong>.
+            Customers never see it, so &ldquo;v2&rdquo; and &ldquo;old one&rdquo; are fine.
           </span>
         </div>
         <div>
           <label for="programDisplayName">Customer-facing name</label>
           <input id="programDisplayName" maxlength="160" placeholder="Chai Club" />
           <span class="field-note">
-            What your customers will be shown. Anything you like &mdash; two programmes may even
-            share one. Optional: nothing displays it yet, so you can decide later.
+            What your customers will be shown. Anything you like, and two programmes may share
+            one. Optional &mdash; nothing displays it yet.
           </span>
         </div>
       </div>
-      <div class="actions">
-        <button id="createProgram">Create</button>
-      </div>
-      <div id="createProgramMessage"></div>
-    </div>
 
-    <div class="panel" id="historyPanel" hidden>
-      <h2>History of <span id="historyProgramName"></span></h2>
+      <h3>What the customer does</h3>
       <p class="hint">
-        Every change keeps the <em>whole</em> configuration as it stood at that moment, not just
-        what moved &mdash; so an award made in March can be explained by reading one row rather
-        than replaying every edit since. Newest first. The forwarding credential is never recorded.
+        Pick as many as you like. Each one becomes its own rule behind the scenes, sharing
+        everything you set below.
       </p>
-      <div id="historyMessage"></div>
-      <div id="historyRows"></div>
-    </div>
-
-    <div class="panel" id="rulesPanel" hidden>
-      <h2>Rules in <span id="rulesProgramName"></span></h2>
-      <p class="hint">
-        Rules are evaluated in priority order and several can fire on one event &mdash; a base
-        rule and a bonus rule both granting is intended, and each keeps its own cap.
-      </p>
-      <div id="ruleMessage"></div>
-      <div id="ruleRows"></div>
-    </div>
-
-    <div class="panel" id="createRulePanel" hidden>
-      <h2>New rule</h2>
-      <div class="row">
+      <div id="triggerGroups"></div>
+      <div class="row" id="thresholdRow" hidden>
         <div>
-          <label for="ruleTrigger">What the customer does</label>
-          <select id="ruleTrigger"></select>
+          <label for="ruleMinPointsBalance">Fires once the balance reaches</label>
+          <input id="ruleMinPointsBalance" type="number" min="1" max="10000000" value="100" />
           <span class="field-note">
-            The action that sets this rule off. Some are listed but greyed out &mdash; they are
-            modelled and not yet wired to anything, so a rule using one would save and then never
-            fire.
+            Points. Checked after any award that adds points, so it fires on the credit that
+            takes them to this number or past it.
           </span>
         </div>
+      </div>
+
+      <h3>How often, and how soon</h3>
+      <div class="row">
         <div>
           <label for="ruleCapScope">How often it can pay out</label>
           <select id="ruleCapScope">
-            <option value="none">No cap</option>
+            <option value="none" selected>No cap</option>
             <option value="day">Once a day</option>
             <option value="week">Once a week</option>
             <option value="month">Once a month</option>
@@ -120,34 +104,38 @@
             <option value="lifetime">Once ever</option>
           </select>
           <span class="field-note">
-            Per customer, counted in the business&rsquo;s timezone. Without a cap, somebody can
-            earn from this rule as often as they trigger it.
+            Optional, and no cap by default. Per customer, counted in the business&rsquo;s
+            timezone. Without one, somebody can earn as often as they trigger it.
           </span>
         </div>
-        <div>
+        <div id="holdRow">
           <label for="ruleHoldHours">Hold before it counts</label>
-          <input id="ruleHoldHours" type="number" min="0" max="720" value="24" />
+          <input id="ruleHoldHours" type="number" min="0" max="720" value="0" />
           <span class="field-note">
-            Hours to wait before the award is actually granted, which is also the window a deleted
-            or hidden post is taken back in. 0 grants straight away.
+            Optional. Hours to wait before the award is really granted, which is also the window
+            a deleted or hidden post is taken back in. 0 grants straight away.
           </span>
         </div>
       </div>
-      <!--
-        Only for the balance trigger, and REQUIRED there: a threshold rule with
-        no threshold is refused by the server, so the field appears with the
-        trigger rather than sitting empty next to the other thirteen.
-      -->
-      <div class="row" id="ruleThresholdRow" hidden>
+
+      <h3>When it runs</h3>
+      <p class="hint">
+        All of this is optional. No dates means running now, indefinitely. No days ticked means
+        any day, any hour. A day ticked with no hours means all of that day.
+      </p>
+      <div class="row">
         <div>
-          <label for="ruleMinPointsBalance">Fires once the balance reaches</label>
-          <input id="ruleMinPointsBalance" type="number" min="1" max="10000000" value="100" />
-          <span class="field-note">
-            Points. Checked after any award that adds points, so it fires on the credit that takes
-            them to this number or past it.
-          </span>
+          <label for="scheduleStartsAt">From</label>
+          <input id="scheduleStartsAt" type="date" />
+          <span class="field-note">Leave empty to start immediately. May be in the future.</span>
+        </div>
+        <div>
+          <label for="scheduleEndsAt">To</label>
+          <input id="scheduleEndsAt" type="date" />
+          <span class="field-note">Leave empty for no end.</span>
         </div>
       </div>
+      <div id="scheduleDays"></div>
 
       <h3>What they get</h3>
       <p class="hint">
@@ -204,54 +192,41 @@
         <button class="secondary" id="addBenefit">Add reward</button>
       </div>
 
-      <h3>When it applies</h3>
-      <p class="hint">
-        Leave this empty and the rule applies whenever the trigger happens. Add a window and it
-        only applies inside those hours, in the business&rsquo;s timezone.
-      </p>
-      <div id="conditionList"></div>
-      <div class="actions">
-        <span class="hint">Days</span>
-        <label class="hint"><input type="checkbox" class="slotDay" value="1" /> Mon</label>
-        <label class="hint"><input type="checkbox" class="slotDay" value="2" /> Tue</label>
-        <label class="hint"><input type="checkbox" class="slotDay" value="3" /> Wed</label>
-        <label class="hint"><input type="checkbox" class="slotDay" value="4" /> Thu</label>
-        <label class="hint"><input type="checkbox" class="slotDay" value="5" /> Fri</label>
-        <label class="hint"><input type="checkbox" class="slotDay" value="6" /> Sat</label>
-        <label class="hint"><input type="checkbox" class="slotDay" value="7" /> Sun</label>
-      </div>
-      <div class="row">
-        <div>
-          <label for="slotStart">From</label>
-          <input id="slotStart" type="time" value="18:00" />
-          <span class="field-note">Start of the window, in the business&rsquo;s timezone.</span>
-        </div>
-        <div>
-          <label for="slotEnd">To</label>
-          <input id="slotEnd" type="time" value="21:00" />
-          <span class="field-note">
-            End of it. Earlier than the start means it runs past midnight.
-          </span>
-        </div>
-      </div>
-      <div class="actions">
-        <button class="secondary" id="addSlot">Add window</button>
-      </div>
-      <p class="hint" id="slotHint">
-        A window ending before it starts runs past midnight &mdash; 22:00 to 02:00 is Friday night
-        and the first two hours of Saturday. Add several for one day if there is a lunch window
-        and a dinner window.
-      </p>
-
       <div class="actions">
         <label class="hint" for="ruleReverse">
           <input type="checkbox" id="ruleReverse" checked />
           Take it back if the content is deleted or hidden
         </label>
-        <button id="createRule">Add rule</button>
       </div>
-      <div id="createRuleMessage"></div>
+
+      <div class="actions">
+        <button id="createProgram">Save program</button>
+      </div>
+      <div id="createProgramMessage"></div>
     </div>
+
+
+    <div class="panel" id="historyPanel" hidden>
+      <h2>History of <span id="historyProgramName"></span></h2>
+      <p class="hint">
+        Every change keeps the <em>whole</em> configuration as it stood at that moment, not just
+        what moved &mdash; so an award made in March can be explained by reading one row rather
+        than replaying every edit since. Newest first. The forwarding credential is never recorded.
+      </p>
+      <div id="historyMessage"></div>
+      <div id="historyRows"></div>
+    </div>
+
+    <div class="panel" id="rulesPanel" hidden>
+      <h2>Rules in <span id="rulesProgramName"></span></h2>
+      <p class="hint">
+        Rules are evaluated in priority order and several can fire on one event &mdash; a base
+        rule and a bonus rule both granting is intended, and each keeps its own cap.
+      </p>
+      <div id="ruleMessage"></div>
+      <div id="ruleRows"></div>
+    </div>
+
 
     <div class="panel">
       <h2>A customer&rsquo;s balance</h2>

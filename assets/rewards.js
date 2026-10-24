@@ -16,37 +16,77 @@
    * is how a programme called "dm loyalty" ends up listening for story mentions
    * and awarding nothing.
    */
-  const TRIGGERS = [
-    ['direct_message_inbound', 'Sent us a direct message', true],
-    ['comment_on_own_post', 'Commented on our post', true],
-    ['comment_on_mentioned_post', 'Commented on a post tagging us', true],
-    /*
-     * Not a social action: the engine raises it after any credit that moves a
-     * points balance. It is what makes "30 points becomes RS 50" an ordinary
-     * rule, and it carries a threshold nothing else does.
-     */
-    ['points_balance_reached', 'Reached a points balance', true],
-    /*
-     * These four arrive in the DM thread like any other message and are told
-     * apart by facts already captured on it — see resolveDirectMessageTrigger.
-     * EXACTLY ONE fires per event, most specific first: a story mention does
-     * NOT also fire a "sent us a direct message" rule.
-     */
-    ['story_mention', 'Mentioned us in their story', true],
-    ['story_reply', 'Replied to our story', true],
-    ['referral_entry', 'Arrived from an ad, link or QR code', true],
-    ['postback_tapped', 'Tapped a button', true],
-
-    /* No producer. Listed so they are visible, disabled so they are not traps. */
-    ['post_tagging_us', 'Posted and tagged us', false],
-    ['message_reaction', 'Reacted to our message', false],
-    ['opt_in_granted', 'Opted in', false],
-    ['post_caption_mention', 'Named us in a caption', false],
-    ['post_like', 'Liked our post', false],
-    ['post_share', 'Shared our post', false],
+  /*
+   * THE TRIGGERS, GROUPED BY WHERE THEY COME FROM.
+   *
+   * Everything in the Instagram group is something a customer did on the
+   * platform. The system group holds the one trigger the engine raises
+   * itself, after a credit moves a balance — an internal transfer rather than
+   * an interaction, which is why it cannot be combined with the others and
+   * why almost nothing else on this form applies to it.
+   *
+   * `live` is whether a producer exists. The dead ones are listed so they are
+   * visible and disabled so they are not traps: a rule using one would save
+   * and then never fire.
+   */
+  const TRIGGER_GROUPS = [
+    {
+      key: 'instagram',
+      label: 'Instagram',
+      note: 'Something a customer did. Pick as many as apply.',
+      triggers: [
+        ['direct_message_inbound', 'Sent us a direct message', true],
+        ['story_mention', 'Mentioned us in their story', true],
+        ['story_reply', 'Replied to our story', true],
+        ['comment_on_own_post', 'Commented on our post', true],
+        ['comment_on_mentioned_post', 'Commented on a post tagging us', true],
+        ['referral_entry', 'Arrived from an ad, link or QR code', true],
+        ['postback_tapped', 'Tapped a button', true],
+        ['post_tagging_us', 'Posted and tagged us', false],
+        ['message_reaction', 'Reacted to our message', false],
+        ['opt_in_granted', 'Opted in', false],
+        ['post_caption_mention', 'Named us in a caption', false],
+        ['post_like', 'Liked our post', false],
+        ['post_share', 'Shared our post', false],
+      ],
+    },
+    {
+      key: 'system',
+      label: 'Inside the system',
+      note:
+        'Not something a customer does — the engine raises it after a credit moves a balance. ' +
+        'It cannot be combined with the Instagram triggers above, because it is a transfer ' +
+        'between your own balances rather than an interaction.',
+      triggers: [['points_balance_reached', 'Reached a points balance', true]],
+    },
   ];
 
+  /* Flattened from the groups above, so a label is never defined twice. */
+  const TRIGGERS = TRIGGER_GROUPS.flatMap((group) => group.triggers);
+
   const BALANCE_TRIGGER = 'points_balance_reached';
+
+  /** ISO 1 = Monday … 7 = Sunday, matching the engine and Postgres. */
+  const DAYS = [
+    [1, 'Monday'],
+    [2, 'Tuesday'],
+    [3, 'Wednesday'],
+    [4, 'Thursday'],
+    [5, 'Friday'],
+    [6, 'Saturday'],
+    [7, 'Sunday'],
+  ];
+
+  /*
+   * TWO SLOT PAIRS PER DAY, and no button to add a third.
+   *
+   * A lunch window and a dinner window is the case this exists for, and it is
+   * the case the design doc names. A repeating "add window" control turns one
+   * form into a small application with its own add, remove and validate —
+   * which is what this redesign is getting rid of. The contract accepts up to
+   * eight per day if a reason ever appears.
+   */
+  const SLOTS_PER_DAY = 2;
 
   const el = (id) => document.getElementById(id);
 
@@ -64,7 +104,6 @@
   let selectedProgram = null;
   /* What the rule being built will carry. Cleared when the rule is created. */
   let draftBenefits = [];
-  let draftSlots = [];
 
   function show(target, kind, text, code) {
     target.innerHTML = '';
@@ -512,27 +551,76 @@
 
   async function createProgram() {
     const button = el('createProgram');
+    const target = el('createProgramMessage');
+
+    const triggers = chosenTriggers();
+    /*
+     * CHECKED HERE ONLY WHERE THE ANSWER IS OBVIOUS AND LOCAL. The server
+     * refuses all of this too — these two just save a round trip on the
+     * mistakes somebody makes while still filling the form in.
+     */
+    if (triggers.length > 0 && draftBenefits.length === 0) {
+      show(target, 'error', 'Add at least one reward, or the triggers award nothing.');
+      return;
+    }
+
     button.disabled = true;
     try {
-      /* Name only. Timezone and currency belong to the business now and are
-       * read from its settings, so a programme cannot carry a second opinion. */
+      const balancePicked = triggers.indexOf(BALANCE_TRIGGER) !== -1;
       const body = {
         name: el('programName').value.trim(),
         /* Empty means unset, not an empty name — the server normalises it to
          * null, and sending "" would be asking it to. */
         displayName: el('programDisplayName').value.trim() || null,
+        triggers: triggers,
+        capScope: el('ruleCapScope').value,
+        holdHours: balancePicked ? 0 : Number(el('ruleHoldHours').value || 0),
+        reversalPolicy: el('ruleReverse').checked ? 'on_content_deleted' : 'none',
+        benefits: draftBenefits,
+        schedule: readSchedule(),
       };
+      /* Sent only with the trigger it belongs to; on anything else the server
+       * refuses it as a condition the engine would never consult. */
+      if (balancePicked) {
+        body.minPointsBalance = Number(el('ruleMinPointsBalance').value || 0);
+      }
+
       await window.api.request('/rewards/programs', { method: 'POST', body: body });
-      show(el('createProgramMessage'), 'ok', 'Created. It starts as a draft.');
-      el('programName').value = '';
-      el('programDisplayName').value = '';
-      await loadPrograms();
+      show(
+        target,
+        'ok',
+        triggers.length > 0
+          ? 'Created as a draft, with ' +
+              triggers.length +
+              (triggers.length === 1 ? ' rule' : ' rules') +
+              '. Switch it on when you are ready.'
+          : 'Created as a draft. It has no triggers yet, so it awards nothing.',
+      );
+      resetProgramForm();
+      await Promise.all([loadPrograms(), loadDashboard()]);
     } catch (error) {
-      handle(error, el('createProgramMessage'));
+      handle(error, target);
     } finally {
       button.disabled = false;
     }
   }
+
+  /** Back to empty, so the next programme does not inherit the last one. */
+  function resetProgramForm() {
+    el('programName').value = '';
+    el('programDisplayName').value = '';
+    el('ruleCapScope').value = 'none';
+    el('ruleHoldHours').value = '0';
+    el('ruleReverse').checked = true;
+    el('scheduleStartsAt').value = '';
+    el('scheduleEndsAt').value = '';
+    draftBenefits = [];
+    renderDraft();
+    renderTriggers();
+    renderSchedule();
+    syncTriggerFields();
+  }
+
 
   /* ------------------------------------------------------------------ */
   /* Rules                                                               */
@@ -603,7 +691,6 @@
     selectedProgram = program;
     el('rulesPanel').hidden = false;
     el('rulesProgramName').textContent = program.name;
-    el('createRulePanel').hidden = permissions.indexOf('rewards.manage') === -1;
 
     const rows = el('ruleRows');
     rows.innerHTML = '';
@@ -623,65 +710,170 @@
     }
   }
 
-  async function createRule() {
-    if (!selectedProgram) return;
-    if (draftBenefits.length === 0) {
-      show(el('createRuleMessage'), 'error', 'A rule has to award something.');
-      return;
-    }
 
-    const button = el('createRule');
-    button.disabled = true;
-    try {
-      /*
-       * AN EMPTY WINDOW LIST MEANS ALWAYS, never never. So no condition is
-       * sent when nobody added one — sending an empty slots array would be a
-       * window that can never match.
-       */
-      const conditions =
-        draftSlots.length > 0
-          ? [{ conditionKind: 'time_window', config: { slots: draftSlots } }]
-          : [];
+  /* ------------------------------------------------------------------ */
+  /* The one form                                                        */
+  /* ------------------------------------------------------------------ */
 
-      await window.api.request('/rewards/rules', {
-        method: 'POST',
-        body: {
-          programRefId: selectedProgram.refId,
-          triggerKind: el('ruleTrigger').value,
-          triggerConfig: triggerConfigFromForm(),
-          capScope: el('ruleCapScope').value,
-          capCount: 1,
-          holdHours: Number(el('ruleHoldHours').value || 0),
-          reversalPolicy: el('ruleReverse').checked ? 'on_content_deleted' : 'none',
-          conditions: conditions,
-          benefits: draftBenefits,
-        },
-      });
-      show(el('createRuleMessage'), 'ok', 'Rule added.');
-      draftBenefits = [];
-      draftSlots = [];
-      renderDraft();
-      await selectProgram(selectedProgram);
-    } catch (error) {
-      handle(error, el('createRuleMessage'));
-    } finally {
-      button.disabled = false;
-    }
+  /** Every trigger currently ticked. */
+  function chosenTriggers() {
+    return Array.from(document.querySelectorAll('.triggerPick:checked')).map((box) => box.value);
   }
 
-  /*
-   * The threshold, and only for the trigger that takes one.
+  /**
+   * Renders the trigger groups, and enforces the one rule the form itself
+   * knows: the system trigger stands alone.
    *
-   * The server refuses `minPointsBalance` on any other trigger and refuses its
-   * absence on this one, so sending it unconditionally would 400 every rule.
+   * ENFORCED BY DISABLING, not by refusing on save. Ticking "reached a points
+   * balance" greys out the Instagram list and vice versa, so the combination
+   * cannot be expressed rather than being expressible and then rejected. The
+   * server refuses it too — this is the half that explains why.
    */
-  function triggerConfigFromForm() {
-    if (el('ruleTrigger').value !== BALANCE_TRIGGER) return {};
-    return { minPointsBalance: Number(el('ruleMinPointsBalance').value || 0) };
+  function renderTriggers() {
+    const host = el('triggerGroups');
+    host.innerHTML = '';
+
+    TRIGGER_GROUPS.forEach(function (group) {
+      const heading = document.createElement('div');
+      heading.innerHTML = '<strong>' + group.label + '</strong>';
+      host.appendChild(heading);
+
+      const note = document.createElement('p');
+      note.className = 'hint';
+      note.textContent = group.note;
+      host.appendChild(note);
+
+      const box = document.createElement('div');
+      box.className = 'actions';
+      box.dataset.group = group.key;
+
+      group.triggers.forEach(function (trigger) {
+        const label = document.createElement('label');
+        label.className = 'hint';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'triggerPick';
+        input.value = trigger[0];
+        input.dataset.group = group.key;
+        /* Read back by syncTriggerFields, which must never re-enable one of
+         * these while toggling the two groups against each other. */
+        input.dataset.live = trigger[2] ? 'true' : 'false';
+        /* Disabled, not hidden: a trigger nobody can see is a trigger
+         * somebody asks for again next month. */
+        input.disabled = !trigger[2];
+        input.addEventListener('change', syncTriggerFields);
+        label.appendChild(input);
+        label.append(' ' + (trigger[2] ? trigger[1] : trigger[1] + ' — not built yet'));
+        box.appendChild(label);
+      });
+
+      host.appendChild(box);
+    });
   }
 
+  /** Shows only the fields the chosen triggers actually use. */
   function syncTriggerFields() {
-    el('ruleThresholdRow').hidden = el('ruleTrigger').value !== BALANCE_TRIGGER;
+    const chosen = chosenTriggers();
+    const balancePicked = chosen.indexOf(BALANCE_TRIGGER) !== -1;
+    const socialPicked = chosen.some((t) => t !== BALANCE_TRIGGER);
+
+    /* The two groups lock each other out. */
+    document.querySelectorAll('.triggerPick').forEach(function (box) {
+      const isBalance = box.value === BALANCE_TRIGGER;
+      const dead = box.dataset.live === 'false';
+      if (dead) return;
+      box.disabled = isBalance ? socialPicked : balancePicked;
+    });
+
+    /* Only the balance trigger carries a threshold. */
+    el('thresholdRow').hidden = !balancePicked;
+
+    /*
+     * A hold is a social idea — it exists so a comment deleted an hour later
+     * never pays out, and nobody un-earns points by deleting something. The
+     * server refuses the combination; hiding it is why nobody tries.
+     */
+    el('holdRow').hidden = balancePicked;
+    if (balancePicked) el('ruleHoldHours').value = '0';
+  }
+
+  /**
+   * Seven days, each with a tick and its own hours.
+   *
+   * Everything optional: no tick means the day is not restricted at all, a
+   * tick with no hours means the whole of that day, and hours only count on a
+   * ticked day. The absence of a restriction has to read as ALWAYS — the
+   * opposite would silently disable whatever nobody filled in.
+   */
+  function renderSchedule() {
+    const host = el('scheduleDays');
+    host.innerHTML = '';
+
+    DAYS.forEach(function (day) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.dataset.isoDay = String(day[0]);
+
+      const pick = document.createElement('div');
+      const label = document.createElement('label');
+      label.className = 'hint';
+      const tick = document.createElement('input');
+      tick.type = 'checkbox';
+      tick.className = 'dayPick';
+      tick.value = String(day[0]);
+      label.appendChild(tick);
+      label.append(' ' + day[1]);
+      pick.appendChild(label);
+      row.appendChild(pick);
+
+      for (let n = 0; n < SLOTS_PER_DAY; n += 1) {
+        const cell = document.createElement('div');
+        const from = document.createElement('input');
+        from.type = 'time';
+        from.className = 'daySlotStart';
+        const to = document.createElement('input');
+        to.type = 'time';
+        to.className = 'daySlotEnd';
+        cell.appendChild(from);
+        cell.append(' to ');
+        cell.appendChild(to);
+        if (n === 0) {
+          const note = document.createElement('span');
+          note.className = 'field-note';
+          note.textContent = 'Leave both empty for the whole day. An end before the start runs past midnight.';
+          cell.appendChild(note);
+        }
+        row.appendChild(cell);
+      }
+
+      host.appendChild(row);
+    });
+  }
+
+  /** The schedule as the API wants it: dates, and a day list with its hours. */
+  function readSchedule() {
+    const days = [];
+    document.querySelectorAll('#scheduleDays .row').forEach(function (row) {
+      const tick = row.querySelector('.dayPick');
+      if (!tick || !tick.checked) return;
+
+      const starts = Array.from(row.querySelectorAll('.daySlotStart'));
+      const ends = Array.from(row.querySelectorAll('.daySlotEnd'));
+      const slots = [];
+      starts.forEach(function (start, i) {
+        const end = ends[i];
+        /* A half-filled pair is not a window. Both or neither. */
+        if (start.value && end && end.value) slots.push({ start: start.value, end: end.value });
+      });
+
+      days.push({ isoDay: Number(tick.value), slots: slots });
+    });
+
+    return {
+      startsAt: el('scheduleStartsAt').value ? el('scheduleStartsAt').value : null,
+      endsAt: el('scheduleEndsAt').value ? el('scheduleEndsAt').value : null,
+      days: days,
+    };
   }
 
   /* ------------------------------------------------------------------ */
@@ -867,32 +1059,6 @@
       benefitList.appendChild(row);
     });
 
-    const conditionList = el('conditionList');
-    conditionList.innerHTML = '';
-    draftSlots.forEach(function (slot, index) {
-      const row = document.createElement('div');
-      row.className = 'row';
-      const left = document.createElement('div');
-      const names = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      const wraps = slot.start > slot.end ? ' (into the next day)' : '';
-      left.textContent =
-        slot.days.map((d) => names[d]).join(', ') +
-        ' · ' +
-        slot.start +
-        '–' +
-        slot.end +
-        wraps;
-      row.appendChild(left);
-      const remove = document.createElement('button');
-      remove.className = 'secondary';
-      remove.textContent = 'Remove';
-      remove.addEventListener('click', function () {
-        draftSlots.splice(index, 1);
-        renderDraft();
-      });
-      row.appendChild(remove);
-      conditionList.appendChild(row);
-    });
   }
 
   function addBenefit() {
@@ -908,18 +1074,18 @@
      */
     if (kind === 'issue_entitlement') {
       if (!el('benefitItemRef').value.trim()) {
-        show(el('createRuleMessage'), 'error', 'Give the item a reference.');
+        show(el('createProgramMessage'), 'error', 'Give the item a reference.');
         return;
       }
     } else if (amount < 1) {
-      show(el('createRuleMessage'), 'error', 'Enter how much this awards.');
+      show(el('createProgramMessage'), 'error', 'Enter how much this awards.');
       return;
     }
     if (kind === 'convert_value' && Number(el('benefitBurnPoints').value || 0) < 1) {
-      show(el('createRuleMessage'), 'error', 'Enter how many points a conversion spends.');
+      show(el('createProgramMessage'), 'error', 'Enter how many points a conversion spends.');
       return;
     }
-    el('createRuleMessage').innerHTML = '';
+    el('createProgramMessage').innerHTML = '';
 
     const benefit = { benefitKind: kind, awardMode: mode, awardCap: null, config: {} };
 
@@ -961,40 +1127,6 @@
     renderDraft();
   }
 
-  function addSlot() {
-    const days = Array.prototype.slice
-      .call(document.querySelectorAll('.slotDay:checked'))
-      .map(function (box) {
-        return Number(box.value);
-      });
-    if (days.length === 0) {
-      show(el('createRuleMessage'), 'error', 'Pick at least one day for the window.');
-      return;
-    }
-    const start = el('slotStart').value;
-    const end = el('slotEnd').value;
-    if (!start || !end) {
-      show(el('createRuleMessage'), 'error', 'Give the window a start and an end time.');
-      return;
-    }
-    /*
-     * Equal times are the one case neither side can interpret: it is either an
-     * empty window or a 24-hour one, and guessing either way would be wrong
-     * half the time. The server treats start < end as a normal window and
-     * start > end as a wrap, so equality has no meaning.
-     */
-    if (start === end) {
-      show(
-        el('createRuleMessage'),
-        'error',
-        'A window has to start and end at different times. For all day, leave the windows empty.',
-      );
-      return;
-    }
-    draftSlots.push({ days: days, start: start, end: end });
-    el('createRuleMessage').innerHTML = '';
-    renderDraft();
-  }
 
   function wireVisibility() {
     el('createProgramPanel').hidden = permissions.indexOf('rewards.manage') === -1;
@@ -1030,35 +1162,24 @@
 
     el('createProgram').addEventListener('click', createProgram);
     el('addBenefit').addEventListener('click', addBenefit);
-    el('addSlot').addEventListener('click', addSlot);
     el('toggleArchived').addEventListener('click', async () => {
       showingArchived = !showingArchived;
       /* A programme selected in one view should not stay open in the other. */
       el('rulesPanel').hidden = true;
-      el('createRulePanel').hidden = true;
       selectedProgram = null;
       await loadPrograms();
     });
-    el('createRule').addEventListener('click', createRule);
     el('lookUp').addEventListener('click', lookUp);
     el('adjust').addEventListener('click', adjust);
   }
 
   async function start() {
-    el('ruleTrigger').addEventListener('change', syncTriggerFields);
-    TRIGGERS.forEach(function (trigger) {
-      const option = document.createElement('option');
-      option.value = trigger[0];
-      option.textContent = trigger[2] ? trigger[1] : trigger[1] + ' — not built yet';
-      /*
-       * Disabled, not hidden. The first option is whatever the browser selects
-       * by default, so a dead trigger at the top of this list is a rule that
-       * silently never fires — which is exactly what happened twice.
-       */
-      option.disabled = !trigger[2];
-      el('ruleTrigger').appendChild(option);
-    });
-    /* The select now holds a value; make the form agree with it. */
+    /*
+     * Built before anything is fetched, so the form is complete even if the
+     * network is slow — and so `syncTriggerFields` has something to sync.
+     */
+    renderTriggers();
+    renderSchedule();
     syncTriggerFields();
 
     try {
