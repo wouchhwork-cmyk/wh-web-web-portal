@@ -183,22 +183,6 @@
     counts.textContent = parts.join(' · ');
     left.appendChild(counts);
 
-    if (program.budgetMinor !== null) {
-      const budget = document.createElement('div');
-      budget.className = 'hint';
-      const pct = Math.round((program.spentMinor / program.budgetMinor) * 100);
-      budget.textContent =
-        money(program.spentMinor, program.budgetCurrencyCode) +
-        ' of ' +
-        money(program.budgetMinor, program.budgetCurrencyCode) +
-        ' committed (' +
-        pct +
-        '%)';
-      /* Past 90% a program is about to start refusing. Worth saying before it does. */
-      if (pct >= 90) budget.textContent += ' — nearly spent';
-      left.appendChild(budget);
-    }
-
     row.appendChild(left);
 
     const right = document.createElement('div');
@@ -241,13 +225,7 @@
 
     const meta = document.createElement('div');
     meta.className = 'hint';
-    const spent = program.budgetMinor
-      ? money(program.spentMinor, program.budgetCurrencyCode) +
-        ' of ' +
-        money(program.budgetMinor, program.budgetCurrencyCode) +
-        ' spent'
-      : 'no budget cap';
-    meta.textContent = program.timezone + ' · ' + spent;
+    meta.textContent = program.timezone;
     left.appendChild(meta);
     row.appendChild(left);
 
@@ -377,17 +355,12 @@
     const button = el('createProgram');
     button.disabled = true;
     try {
-      const budget = el('programBudget').value.trim();
       const currency = el('programCurrency').value.trim().toUpperCase();
       const body = {
         name: el('programName').value.trim(),
         timezone: el('programTimezone').value.trim(),
         defaultCurrencyCode: currency || null,
       };
-      if (budget) {
-        body.budgetMinor = Number(budget);
-        body.budgetCurrencyCode = currency || null;
-      }
       await window.api.request('/rewards/programs', { method: 'POST', body: body });
       show(el('createProgramMessage'), 'ok', 'Created. It starts as a draft.');
       el('programName').value = '';
