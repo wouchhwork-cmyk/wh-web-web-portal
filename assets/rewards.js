@@ -277,9 +277,18 @@
     name.textContent = program.name;
     left.appendChild(name);
 
+    /*
+     * THE INTERNAL NAME IS THE HEADING, because this screen is the business
+     * looking at its own programmes and that is the name it identifies them
+     * by. The customer-facing one is shown beside it so somebody can see what
+     * the public will read — and its absence is stated rather than left as an
+     * empty line, since "not chosen yet" is a real answer here.
+     */
     const meta = document.createElement('div');
     meta.className = 'hint';
-    meta.textContent = program.timezone;
+    meta.textContent = program.displayName
+      ? 'Customers see: ' + program.displayName
+      : 'No customer-facing name yet';
     left.appendChild(meta);
     row.appendChild(left);
 
@@ -418,10 +427,18 @@
     }
     left.appendChild(detail);
 
+    /*
+     * The snapshot's own fields, not a guess at them. This printed
+     * `snapshot.timezone`, which a programme no longer carries — it belongs
+     * to the business now — so the line read "status active · undefined".
+     */
     const snapshot = document.createElement('div');
     snapshot.className = 'hint';
+    const shown = version.snapshot.displayName
+      ? 'customers see "' + version.snapshot.displayName + '"'
+      : 'no customer-facing name';
     snapshot.textContent =
-      'status ' + version.snapshot.status + ' · ' + version.snapshot.timezone;
+      'status ' + version.snapshot.status + ' · "' + version.snapshot.name + '" · ' + shown;
     left.appendChild(snapshot);
 
     row.appendChild(left);
@@ -499,10 +516,16 @@
     try {
       /* Name only. Timezone and currency belong to the business now and are
        * read from its settings, so a programme cannot carry a second opinion. */
-      const body = { name: el('programName').value.trim() };
+      const body = {
+        name: el('programName').value.trim(),
+        /* Empty means unset, not an empty name — the server normalises it to
+         * null, and sending "" would be asking it to. */
+        displayName: el('programDisplayName').value.trim() || null,
+      };
       await window.api.request('/rewards/programs', { method: 'POST', body: body });
       show(el('createProgramMessage'), 'ok', 'Created. It starts as a draft.');
       el('programName').value = '';
+      el('programDisplayName').value = '';
       await loadPrograms();
     } catch (error) {
       handle(error, el('createProgramMessage'));

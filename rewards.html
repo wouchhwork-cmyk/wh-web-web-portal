@@ -53,9 +53,21 @@
       </p>
       <div class="row">
         <div>
-          <label for="programName">Program name</label>
-          <input id="programName" maxlength="120" placeholder="Monsoon loyalty" />
-          <span class="field-note">For you to recognise. Customers never see it.</span>
+          <label for="programName">Internal name</label>
+          <input id="programName" maxlength="120" placeholder="Monsoon loyalty v2" />
+          <span class="field-note">
+            For you to recognise, and <strong>no two programmes here can share one</strong> &mdash;
+            that is what makes it possible to say which you mean. Customers never see it, so
+            &ldquo;v2&rdquo; and &ldquo;old one&rdquo; are fine.
+          </span>
+        </div>
+        <div>
+          <label for="programDisplayName">Customer-facing name</label>
+          <input id="programDisplayName" maxlength="160" placeholder="Chai Club" />
+          <span class="field-note">
+            What your customers will be shown. Anything you like &mdash; two programmes may even
+            share one. Optional: nothing displays it yet, so you can decide later.
+          </span>
         </div>
       </div>
       <p class="hint">
