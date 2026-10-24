@@ -97,6 +97,20 @@
    */
   let editingRefId = null;
 
+  /*
+   * CONDITIONS THIS FORM CANNOT SHOW, carried through untouched.
+   *
+   * The engine has condition kinds beyond days-and-hours — `customer_tenure`
+   * and `content_match` — which can be set through the rules API and have no
+   * control here. Held as opaque data and sent straight back on save, because
+   * the alternative is what used to happen: the form saved what it understood
+   * and silently destroyed the rest.
+   *
+   * Never edited here. If this form ever grows controls for them, this
+   * variable is what they replace.
+   */
+  let carriedConditions = [];
+
   function show(target, kind, text, code) {
     target.innerHTML = '';
     const box = document.createElement('div');
@@ -618,6 +632,8 @@
         holdHours: balancePicked ? 0 : Number(el('ruleHoldHours').value || 0),
         benefits: rewards.benefits,
         destination: el('rewardDestination').value,
+        /* Returned exactly as they were read — see `carriedConditions`. */
+        conditions: carriedConditions,
         schedule: readSchedule(),
       };
       /* Sent only with the trigger it belongs to; on anything else the server
@@ -820,6 +836,22 @@
       }
       host.appendChild(setting('What they get', rewards));
 
+      if ((config.conditions || []).length > 0) {
+        /*
+         * NAMED, not rendered in detail. This screen cannot edit them and the
+         * form cannot show them; what somebody needs to know here is that the
+         * programme has extra qualifying rules, so the configuration they can
+         * see is not the whole of it.
+         */
+        const extra = document.createElement('div');
+        config.conditions.forEach(function (condition) {
+          const line = document.createElement('div');
+          line.textContent = String(condition.conditionKind).replace(/_/g, ' ');
+          extra.appendChild(line);
+        });
+        host.appendChild(setting('Other conditions', extra));
+      }
+
       host.appendChild(
         setting(
           'Where the value goes',
@@ -985,6 +1017,7 @@
       el('programDisplayName').value = config.displayName || '';
       el('ruleCapScope').value = config.capScope || 'none';
       el('ruleHoldHours').value = String(config.holdHours || 0);
+      carriedConditions = config.conditions || [];
       el('rewardDestination').value = config.destination || 'internal';
       syncDestination();
       if (config.minPointsBalance) {
@@ -1136,6 +1169,7 @@
   /** Back to empty AND back to creating, so neither carries into the next one. */
   function resetProgramForm() {
     editingRefId = null;
+    carriedConditions = [];
     el('programFormTitle').textContent = 'New program';
     el('createProgram').textContent = 'Save program';
     el('cancelEdit').hidden = true;
