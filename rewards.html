@@ -70,12 +70,6 @@
           </span>
         </div>
       </div>
-      <p class="hint">
-        Timezone and currency are <strong>not</strong> set here any more &mdash; they belong to the
-        business and are set once in
-        <a href="settings.html">business settings</a>. Every programme reads the same ones, so two
-        of them can never disagree about when Tuesday starts or what money means.
-      </p>
       <div class="actions">
         <button id="createProgram">Create</button>
       </div>
@@ -126,7 +120,7 @@
             <option value="lifetime">Once ever</option>
           </select>
           <span class="field-note">
-            Per customer, counted in the program&rsquo;s timezone. Without a cap, somebody can
+            Per customer, counted in the business&rsquo;s timezone. Without a cap, somebody can
             earn from this rule as often as they trigger it.
           </span>
         </div>
@@ -213,7 +207,7 @@
       <h3>When it applies</h3>
       <p class="hint">
         Leave this empty and the rule applies whenever the trigger happens. Add a window and it
-        only applies inside those hours, in the program&rsquo;s own timezone.
+        only applies inside those hours, in the business&rsquo;s timezone.
       </p>
       <div id="conditionList"></div>
       <div class="actions">
@@ -230,7 +224,7 @@
         <div>
           <label for="slotStart">From</label>
           <input id="slotStart" type="time" value="18:00" />
-          <span class="field-note">Start of the window, in the program&rsquo;s timezone.</span>
+          <span class="field-note">Start of the window, in the business&rsquo;s timezone.</span>
         </div>
         <div>
           <label for="slotEnd">To</label>
@@ -301,7 +295,10 @@
         <div id="adjustCurrencyField" hidden>
           <label for="adjustCurrency">Currency</label>
           <input id="adjustCurrency" maxlength="3" placeholder="INR" />
-          <span class="field-note">Three-letter code. Each currency is its own balance.</span>
+          <span class="field-note">
+            A real ISO 4217 code &mdash; INR, USD, GBP. Each currency is its own balance, and an
+            invented one is refused rather than opening a wallet in money that does not exist.
+          </span>
         </div>
         <div>
           <label for="adjustAmount">Amount</label>
