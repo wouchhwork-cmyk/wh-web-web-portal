@@ -239,6 +239,19 @@
     right.appendChild(rules);
 
     /*
+     * KEPT FOR AN ARCHIVED PROGRAMME TOO, and placed before the early return
+     * below for exactly that reason: a retired programme is a record, and
+     * "what was this awarding last March" is the question the record exists
+     * to answer.
+     */
+    const history = document.createElement('button');
+    history.className = 'secondary';
+    history.textContent = 'History';
+    history.title = 'What this programme looked like after every change.';
+    history.addEventListener('click', () => showHistory(program));
+    right.appendChild(history);
+
+    /*
      * AN ARCHIVED PROGRAMME IS A RECORD, so it keeps "Rules" — you can still
      * read what it did — and loses every control that would change it. The
      * server refuses those anyway; showing a button that always 409s would be
@@ -306,6 +319,81 @@
 
     row.appendChild(right);
     return row;
+  }
+
+  /**
+   * One version: what the programme was, and what moved to get there.
+   *
+   * `changed` is empty on version 1 — the first version changed nothing, it IS
+   * the beginning — so that row says so rather than listing every field as
+   * having appeared from nowhere.
+   */
+  function versionRow(version) {
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const left = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = 'v' + version.version;
+    left.appendChild(title);
+
+    const when = document.createElement('div');
+    when.className = 'hint';
+    const who =
+      version.actorKind === 'system'
+        ? 'by the system'
+        : version.isImpersonated
+          ? 'by Wouchh support'
+          : 'by somebody here';
+    when.textContent = new Date(version.at).toLocaleString() + ' · ' + who;
+    left.appendChild(when);
+
+    const changed = Object.keys(version.changed || {});
+    const detail = document.createElement('div');
+    detail.className = 'hint';
+    if (changed.length === 0) {
+      detail.textContent =
+        version.version === 1 ? 'created' : 'no field changed';
+    } else {
+      detail.textContent = changed
+        .map(function (field) {
+          const move = version.changed[field];
+          return field + ': ' + JSON.stringify(move.from) + ' → ' + JSON.stringify(move.to);
+        })
+        .join(' · ');
+    }
+    left.appendChild(detail);
+
+    const snapshot = document.createElement('div');
+    snapshot.className = 'hint';
+    snapshot.textContent =
+      'status ' + version.snapshot.status + ' · ' + version.snapshot.timezone;
+    left.appendChild(snapshot);
+
+    row.appendChild(left);
+    return row;
+  }
+
+  async function showHistory(program) {
+    el('historyPanel').hidden = false;
+    el('historyProgramName').textContent = program.name;
+    const rows = el('historyRows');
+    rows.innerHTML = '';
+    el('historyMessage').innerHTML = '';
+
+    try {
+      const result = await window.api.request(
+        '/rewards/programs/' + program.refId + '/versions',
+      );
+      const items = itemsOf(result);
+      if (items.length === 0) {
+        show(el('historyMessage'), 'info', 'No history recorded for this program yet.');
+        return;
+      }
+      items.forEach((version) => rows.appendChild(versionRow(version)));
+    } catch (error) {
+      handle(error, el('historyMessage'));
+    }
   }
 
   /* Which list is on screen. The working set, or the retired ones. */
@@ -396,6 +484,43 @@
 
     const right = document.createElement('div');
     right.appendChild(pill(rule.isActive ? 'on' : 'off', rule.isActive ? 'ok' : 'none'));
+
+    /*
+     * THE SWITCH THAT HAD NO BUTTON.
+     *
+     * The endpoint existed and nothing called it, so a rule could be created
+     * and never turned off again from here — the pill reported a state the
+     * screen could not change. Behind `rewards.manage` like every other
+     * control, and absent on an archived programme, which awards nothing
+     * whatever its rules say.
+     */
+    const archived = selectedProgram && selectedProgram.status === 'archived';
+    if (!archived && permissions.indexOf('rewards.manage') !== -1) {
+      const toggle = document.createElement('button');
+      toggle.className = 'secondary';
+      toggle.textContent = rule.isActive ? 'Switch off' : 'Switch on';
+      toggle.title = rule.isActive
+        ? 'Stop this rule awarding. The programme and its other rules carry on.'
+        : 'Let this rule start awarding again.';
+      toggle.addEventListener('click', async () => {
+        toggle.disabled = true;
+        try {
+          await window.api.request('/rewards/rules/' + rule.refId + '/active', {
+            method: 'PATCH',
+            /* A real boolean: the server rejects anything else now, which is
+             * what stopped a typo quietly switching a money rule off. */
+            body: { isActive: !rule.isActive },
+          });
+          await selectProgram(selectedProgram);
+        } catch (error) {
+          handle(error, el('ruleMessage'));
+        } finally {
+          toggle.disabled = false;
+        }
+      });
+      right.appendChild(toggle);
+    }
+
     row.appendChild(right);
     return row;
   }
