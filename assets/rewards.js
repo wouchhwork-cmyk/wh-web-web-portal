@@ -26,15 +26,21 @@
      * rule, and it carries a threshold nothing else does.
      */
     ['points_balance_reached', 'Reached a points balance', true],
+    /*
+     * These four arrive in the DM thread like any other message and are told
+     * apart by facts already captured on it — see resolveDirectMessageTrigger.
+     * EXACTLY ONE fires per event, most specific first: a story mention does
+     * NOT also fire a "sent us a direct message" rule.
+     */
+    ['story_mention', 'Mentioned us in their story', true],
+    ['story_reply', 'Replied to our story', true],
+    ['referral_entry', 'Arrived from an ad, link or QR code', true],
+    ['postback_tapped', 'Tapped a button', true],
 
     /* No producer. Listed so they are visible, disabled so they are not traps. */
-    ['story_mention', 'Mentioned us in their story', false],
-    ['story_reply', 'Replied to our story', false],
     ['post_tagging_us', 'Posted and tagged us', false],
     ['message_reaction', 'Reacted to our message', false],
-    ['postback_tapped', 'Tapped a button', false],
     ['opt_in_granted', 'Opted in', false],
-    ['referral_entry', 'Arrived from an ad, link or QR code', false],
     ['post_caption_mention', 'Named us in a caption', false],
     ['post_like', 'Liked our post', false],
     ['post_share', 'Shared our post', false],
@@ -254,6 +260,17 @@
     rules.addEventListener('click', () => selectProgram(program));
     right.appendChild(rules);
 
+    /*
+     * AN ARCHIVED PROGRAMME IS A RECORD, so it keeps "Rules" — you can still
+     * read what it did — and loses every control that would change it. The
+     * server refuses those anyway; showing a button that always 409s would be
+     * a lie told twice.
+     */
+    if (program.status === 'archived') {
+      row.appendChild(right);
+      return row;
+    }
+
     if (permissions.indexOf('rewards.manage') !== -1) {
       const toggle = document.createElement('button');
       toggle.className = 'secondary';
@@ -273,24 +290,80 @@
         }
       });
       right.appendChild(toggle);
+
+      const archive = document.createElement('button');
+      archive.className = 'secondary';
+      archive.textContent = 'Archive';
+      archive.title = 'Retire this programme. It is kept as a record and cannot be switched on again.';
+      archive.addEventListener('click', async () => {
+        /*
+         * ASKED, because it cannot be undone. The server enforces that; this
+         * is so nobody discovers the rule by losing a programme to a stray
+         * click on the button next to Pause.
+         */
+        const sure = window.confirm(
+          'Archive "' +
+            program.name +
+            '"?\n\nIt stops awarding immediately and is kept as a record. This cannot be undone.',
+        );
+        if (!sure) return;
+
+        archive.disabled = true;
+        try {
+          await window.api.request('/rewards/programs/' + program.refId + '/status', {
+            method: 'PATCH',
+            body: { status: 'archived' },
+          });
+          show(el('programMessage'), 'ok', '"' + program.name + '" archived.');
+          await loadPrograms();
+          await loadDashboard();
+        } catch (error) {
+          handle(error, el('programMessage'));
+        } finally {
+          archive.disabled = false;
+        }
+      });
+      right.appendChild(archive);
     }
 
     row.appendChild(right);
     return row;
   }
 
+  /* Which list is on screen. The working set, or the retired ones. */
+  let showingArchived = false;
+
   async function loadPrograms() {
     const rows = el('programRows');
     rows.innerHTML = '';
+    el('programsHeading').textContent = showingArchived
+      ? 'Archived programs'
+      : 'Reward programs';
+    el('toggleArchived').textContent = showingArchived
+      ? 'Back to active programs'
+      : 'View archived';
+    /* Creating a programme while looking at retired ones makes no sense. */
+    el('createProgramPanel').hidden =
+      showingArchived || permissions.indexOf('rewards.manage') === -1;
+
     try {
       /*
        * The envelope unwraps a controller returning { items } into { data },
        * so the array is on .data.items — see itemsOf.
+       *
+       * Archived programmes are excluded by the server unless asked for by
+       * status, so the working list never shows a retired programme.
        */
-      const result = await window.api.request('/rewards/programs');
+      const result = await window.api.request(
+        '/rewards/programs' + (showingArchived ? '?status=archived' : ''),
+      );
       const items = itemsOf(result);
       if (items.length === 0) {
-        show(el('programMessage'), 'info', 'No programs yet.');
+        show(
+          el('programMessage'),
+          'info',
+          showingArchived ? 'Nothing archived yet.' : 'No programs yet.',
+        );
         return;
       }
       el('programMessage').innerHTML = '';
@@ -778,6 +851,14 @@
     el('createProgram').addEventListener('click', createProgram);
     el('addBenefit').addEventListener('click', addBenefit);
     el('addSlot').addEventListener('click', addSlot);
+    el('toggleArchived').addEventListener('click', async () => {
+      showingArchived = !showingArchived;
+      /* A programme selected in one view should not stay open in the other. */
+      el('rulesPanel').hidden = true;
+      el('createRulePanel').hidden = true;
+      selectedProgram = null;
+      await loadPrograms();
+    });
     el('createRule').addEventListener('click', createRule);
     el('lookUp').addEventListener('click', lookUp);
     el('adjust').addEventListener('click', adjust);

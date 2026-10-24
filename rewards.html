@@ -28,12 +28,20 @@
     </div>
 
     <div class="panel">
-      <h2>Reward programs</h2>
+      <h2 id="programsHeading">Reward programs</h2>
       <p class="hint">
         A program says when it runs and what it can spend. Its rules say what a customer has to
         do, and what they get for it. A program is switched on separately from its dates &mdash;
         one scheduled for next month is active with a start date in the future.
       </p>
+      <p class="hint">
+        Programs are never deleted. <strong>Archiving</strong> retires one: it stops awarding
+        immediately and is kept as a record of what ran and what it cost. That cannot be undone,
+        so an archived program can never be switched back on.
+      </p>
+      <div class="actions">
+        <button class="secondary" id="toggleArchived">View archived</button>
+      </div>
       <div id="programMessage"></div>
       <div id="programRows"></div>
     </div>
