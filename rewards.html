@@ -75,11 +75,26 @@
       </div>
 
       <h3>What the customer does</h3>
-      <p class="hint">
-        Pick as many as you like. Each one becomes its own rule behind the scenes, sharing
-        everything you set below.
-      </p>
-      <div id="triggerGroups"></div>
+      <div class="row">
+        <div class="combo" id="triggerCombo">
+          <label for="triggerToggle">Triggers</label>
+          <button
+            type="button"
+            class="combo-toggle"
+            id="triggerToggle"
+            aria-expanded="false"
+            aria-haspopup="listbox"
+          >
+            <span id="triggerSummary" class="placeholder">Choose what sets this off</span>
+            <span class="caret" aria-hidden="true">&#9660;</span>
+          </button>
+          <div class="combo-menu" id="triggerMenu" role="listbox" aria-multiselectable="true" hidden></div>
+          <span class="field-note">
+            Pick as many as you like. Each becomes its own rule behind the scenes, sharing
+            everything you set below.
+          </span>
+        </div>
+      </div>
       <div class="row" id="thresholdRow" hidden>
         <div>
           <label for="ruleMinPointsBalance">Fires once the balance reaches</label>
@@ -190,13 +205,6 @@
       </div>
       <div class="actions">
         <button class="secondary" id="addBenefit">Add reward</button>
-      </div>
-
-      <div class="actions">
-        <label class="hint" for="ruleReverse">
-          <input type="checkbox" id="ruleReverse" checked />
-          Take it back if the content is deleted or hidden
-        </label>
       </div>
 
       <div class="actions">

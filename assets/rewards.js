@@ -17,52 +17,27 @@
    * and awarding nothing.
    */
   /*
-   * THE TRIGGERS, GROUPED BY WHERE THEY COME FROM.
+   * THE TRIGGERS COME FROM THE SERVER, not from a list in here.
    *
-   * Everything in the Instagram group is something a customer did on the
-   * platform. The system group holds the one trigger the engine raises
-   * itself, after a credit moves a balance — an internal transfer rather than
-   * an interaction, which is why it cannot be combined with the others and
-   * why almost nothing else on this form applies to it.
+   * This file used to carry its own copy — fourteen rows with their own
+   * availability flags — which agrees with the API exactly until somebody
+   * builds a producer and updates one of them. `GET /rewards/triggers`
+   * serves the same list the create endpoints validate against, so the set
+   * offered here and the set accepted there cannot drift.
    *
-   * `live` is whether a producer exists. The dead ones are listed so they are
-   * visible and disabled so they are not traps: a rule using one would save
-   * and then never fire.
+   * Filled by `loadTriggers()` before the picker is built.
    */
-  const TRIGGER_GROUPS = [
-    {
-      key: 'instagram',
-      label: 'Instagram',
-      note: 'Something a customer did. Pick as many as apply.',
-      triggers: [
-        ['direct_message_inbound', 'Sent us a direct message', true],
-        ['story_mention', 'Mentioned us in their story', true],
-        ['story_reply', 'Replied to our story', true],
-        ['comment_on_own_post', 'Commented on our post', true],
-        ['comment_on_mentioned_post', 'Commented on a post tagging us', true],
-        ['referral_entry', 'Arrived from an ad, link or QR code', true],
-        ['postback_tapped', 'Tapped a button', true],
-        ['post_tagging_us', 'Posted and tagged us', false],
-        ['message_reaction', 'Reacted to our message', false],
-        ['opt_in_granted', 'Opted in', false],
-        ['post_caption_mention', 'Named us in a caption', false],
-        ['post_like', 'Liked our post', false],
-        ['post_share', 'Shared our post', false],
-      ],
-    },
-    {
-      key: 'system',
-      label: 'Inside the system',
-      note:
-        'Not something a customer does — the engine raises it after a credit moves a balance. ' +
-        'It cannot be combined with the Instagram triggers above, because it is a transfer ' +
-        'between your own balances rather than an interaction.',
-      triggers: [['points_balance_reached', 'Reached a points balance', true]],
-    },
-  ];
+  let TRIGGERS = [];
 
-  /* Flattened from the groups above, so a label is never defined twice. */
-  const TRIGGERS = TRIGGER_GROUPS.flatMap((group) => group.triggers);
+  const GROUP_LABELS = {
+    instagram: ['Instagram', 'Something a customer did. Pick as many as apply.'],
+    system: [
+      'Inside the system',
+      'Not something a customer does — the engine raises it after a credit moves a balance. ' +
+        'It cannot be combined with the Instagram triggers, because it is a transfer between ' +
+        'your own balances rather than an interaction.',
+    ],
+  };
 
   const BALANCE_TRIGGER = 'points_balance_reached';
 
@@ -78,15 +53,11 @@
   ];
 
   /*
-   * TWO SLOT PAIRS PER DAY, and no button to add a third.
-   *
-   * A lunch window and a dinner window is the case this exists for, and it is
-   * the case the design doc names. A repeating "add window" control turns one
-   * form into a small application with its own add, remove and validate —
-   * which is what this redesign is getting rid of. The contract accepts up to
-   * eight per day if a reason ever appears.
+   * THE SAME CEILING THE SERVER ENFORCES, so the plus button stops where the
+   * contract does. Offering a ninth and letting the save come back 422 is the
+   * form disagreeing with the API about what is possible.
    */
-  const SLOTS_PER_DAY = 2;
+  const MAX_SLOTS_PER_DAY = 8;
 
   const el = (id) => document.getElementById(id);
 
@@ -575,7 +546,6 @@
         triggers: triggers,
         capScope: el('ruleCapScope').value,
         holdHours: balancePicked ? 0 : Number(el('ruleHoldHours').value || 0),
-        reversalPolicy: el('ruleReverse').checked ? 'on_content_deleted' : 'none',
         benefits: draftBenefits,
         schedule: readSchedule(),
       };
@@ -611,7 +581,6 @@
     el('programDisplayName').value = '';
     el('ruleCapScope').value = 'none';
     el('ruleHoldHours').value = '0';
-    el('ruleReverse').checked = true;
     el('scheduleStartsAt').value = '';
     el('scheduleEndsAt').value = '';
     draftBenefits = [];
@@ -619,6 +588,7 @@
     renderTriggers();
     renderSchedule();
     syncTriggerFields();
+    setTriggerMenuOpen(false);
   }
 
 
@@ -631,9 +601,9 @@
     row.className = 'row';
 
     const left = document.createElement('div');
-    const label = TRIGGERS.find((t) => t[0] === rule.triggerKind);
+    const label = TRIGGERS.find((t) => t.key === rule.triggerKind);
     const name = document.createElement('strong');
-    name.textContent = label ? label[1] : rule.triggerKind;
+    name.textContent = label ? label.label : rule.triggerKind;
     left.appendChild(name);
 
     const meta = document.createElement('div');
@@ -721,68 +691,141 @@
   }
 
   /**
-   * Renders the trigger groups, and enforces the one rule the form itself
-   * knows: the system trigger stands alone.
+   * Renders the menu: a group heading, then its options, like an optgroup
+   * that can hold checkboxes.
    *
-   * ENFORCED BY DISABLING, not by refusing on save. Ticking "reached a points
-   * balance" greys out the Instagram list and vice versa, so the combination
-   * cannot be expressed rather than being expressible and then rejected. The
-   * server refuses it too — this is the half that explains why.
+   * A native `<select multiple>` cannot hold a checkbox and a native
+   * `<select>` cannot hold anything but `<option>`, so a control that needs
+   * BOTH a hierarchy and a tick per row has to be built. It is styled as the
+   * select it replaces rather than announcing itself as something new.
    */
   function renderTriggers() {
-    const host = el('triggerGroups');
-    host.innerHTML = '';
+    const menu = el('triggerMenu');
+    menu.innerHTML = '';
 
-    TRIGGER_GROUPS.forEach(function (group) {
+    /* Grouped in the order the server listed them, so the API decides what
+     * exists and this decides only how it reads. */
+    const groups = [];
+    TRIGGERS.forEach(function (trigger) {
+      let group = groups.find((g) => g.key === trigger.group);
+      if (!group) {
+        group = { key: trigger.group, triggers: [] };
+        groups.push(group);
+      }
+      group.triggers.push(trigger);
+    });
+
+    groups.forEach(function (group) {
+      const text = GROUP_LABELS[group.key] || [group.key, ''];
+
       const heading = document.createElement('div');
-      heading.innerHTML = '<strong>' + group.label + '</strong>';
-      host.appendChild(heading);
+      heading.className = 'combo-group';
+      heading.textContent = text[0];
+      menu.appendChild(heading);
 
-      const note = document.createElement('p');
-      note.className = 'hint';
-      note.textContent = group.note;
-      host.appendChild(note);
-
-      const box = document.createElement('div');
-      box.className = 'actions';
-      box.dataset.group = group.key;
+      if (text[1]) {
+        const note = document.createElement('div');
+        note.className = 'combo-group-note';
+        note.textContent = text[1];
+        menu.appendChild(note);
+      }
 
       group.triggers.forEach(function (trigger) {
-        const label = document.createElement('label');
-        label.className = 'hint';
+        const row = document.createElement('label');
+        row.className = 'combo-option' + (trigger.available ? '' : ' is-disabled');
+
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.className = 'triggerPick';
-        input.value = trigger[0];
-        input.dataset.group = group.key;
-        /* Read back by syncTriggerFields, which must never re-enable one of
-         * these while toggling the two groups against each other. */
-        input.dataset.live = trigger[2] ? 'true' : 'false';
-        /* Disabled, not hidden: a trigger nobody can see is a trigger
-         * somebody asks for again next month. */
-        input.disabled = !trigger[2];
+        input.value = trigger.key;
+        input.dataset.group = trigger.group;
+        /* Read back by syncTriggerFields, which toggles the two groups
+         * against each other and must never re-enable one of these. */
+        input.dataset.live = trigger.available ? 'true' : 'false';
+        /*
+         * Disabled, not hidden. One nobody can see is one somebody asks for
+         * again next month — and the server refuses it on save too, so this
+         * is the half that explains why rather than the half that enforces.
+         */
+        input.disabled = !trigger.available;
         input.addEventListener('change', syncTriggerFields);
-        label.appendChild(input);
-        label.append(' ' + (trigger[2] ? trigger[1] : trigger[1] + ' — not built yet'));
-        box.appendChild(label);
-      });
+        row.appendChild(input);
 
-      host.appendChild(box);
+        const label = document.createElement('span');
+        label.textContent = trigger.label;
+        if (!trigger.available) {
+          const why = document.createElement('span');
+          why.className = 'why';
+          why.textContent = 'not built yet';
+          label.appendChild(why);
+        }
+        row.appendChild(label);
+
+        menu.appendChild(row);
+      });
     });
   }
 
-  /** Shows only the fields the chosen triggers actually use. */
+  /** Fetches the list the server validates against. */
+  async function loadTriggers() {
+    const result = await window.api.request('/rewards/triggers');
+    TRIGGERS = itemsOf(result);
+    renderTriggers();
+    syncTriggerFields();
+  }
+
+  /** Opens or closes the menu. */
+  function setTriggerMenuOpen(open) {
+    el('triggerMenu').hidden = !open;
+    el('triggerToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  /**
+   * What the closed control says.
+   *
+   * Names up to two, then counts — a closed control listing seven triggers is
+   * wider than the form and tells nobody anything they could not get by
+   * opening it.
+   */
+  function renderTriggerSummary() {
+    const chosen = chosenTriggers();
+    const summary = el('triggerSummary');
+
+    if (chosen.length === 0) {
+      summary.className = 'placeholder';
+      summary.textContent = 'Choose what sets this off';
+      return;
+    }
+
+    const labels = chosen.map(function (value) {
+      const found = TRIGGERS.find((t) => t.key === value);
+      return found ? found.label : value;
+    });
+
+    summary.className = '';
+    summary.textContent =
+      labels.length <= 2 ? labels.join(', ') : labels[0] + ' and ' + (labels.length - 1) + ' more';
+  }
+
+  /**
+   * Shows only the fields the chosen triggers actually use, and stops the two
+   * groups being mixed.
+   *
+   * ENFORCED BY DISABLING, not by refusing on save. Ticking "reached a points
+   * balance" greys out the Instagram options and vice versa, so the
+   * combination cannot be expressed rather than being expressible and then
+   * rejected. The server refuses it too — this is the half that explains why.
+   */
   function syncTriggerFields() {
     const chosen = chosenTriggers();
     const balancePicked = chosen.indexOf(BALANCE_TRIGGER) !== -1;
     const socialPicked = chosen.some((t) => t !== BALANCE_TRIGGER);
 
-    /* The two groups lock each other out. */
     document.querySelectorAll('.triggerPick').forEach(function (box) {
+      if (box.dataset.live === 'false') return;
       const isBalance = box.value === BALANCE_TRIGGER;
-      const dead = box.dataset.live === 'false';
-      if (dead) return;
       box.disabled = isBalance ? socialPicked : balancePicked;
+      box.closest('.combo-option').classList.toggle('is-disabled', box.disabled);
     });
 
     /* Only the balance trigger carries a threshold. */
@@ -795,10 +838,67 @@
      */
     el('holdRow').hidden = balancePicked;
     if (balancePicked) el('ruleHoldHours').value = '0';
+
+    renderTriggerSummary();
+  }
+
+  /** One from/to pair, with the button that removes it. */
+  function slotRow(day) {
+    const row = document.createElement('div');
+    row.className = 'slot-row';
+
+    const from = document.createElement('input');
+    from.type = 'time';
+    from.className = 'daySlotStart';
+    row.appendChild(from);
+
+    const to = document.createElement('input');
+    to.type = 'time';
+    to.className = 'daySlotEnd';
+    row.appendChild(to);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'secondary slot-remove';
+    remove.textContent = '−';
+    remove.title = 'Remove this window';
+    remove.addEventListener('click', function () {
+      row.remove();
+      syncDay(day);
+    });
+    row.appendChild(remove);
+
+    return row;
   }
 
   /**
-   * Seven days, each with a tick and its own hours.
+   * Shows a day's hours only once the day is ticked, and keeps the add and
+   * remove buttons honest about what is still possible.
+   *
+   * ONE EMPTY PAIR IS ALWAYS LEFT. A ticked day with no hours means the WHOLE
+   * day, which is a real answer — so the last pair is never removable, and
+   * leaving it blank is how somebody says "all of Friday".
+   */
+  function syncDay(day) {
+    const ticked = day.querySelector('.dayPick').checked;
+    const hours = day.querySelector('.day-hours');
+    hours.hidden = !ticked;
+
+    if (ticked && hours.querySelectorAll('.slot-row').length === 0) {
+      hours.insertBefore(slotRow(day), hours.querySelector('.slot-add'));
+    }
+
+    const rows = hours.querySelectorAll('.slot-row');
+    /* Nothing to remove when there is only the one that means "all day". */
+    rows.forEach(function (row) {
+      row.querySelector('.slot-remove').disabled = rows.length === 1;
+    });
+    /* And the plus stops where the contract does. */
+    hours.querySelector('.slot-add').disabled = rows.length >= MAX_SLOTS_PER_DAY;
+  }
+
+  /**
+   * Seven days, each a tick that reveals its own hours.
    *
    * Everything optional: no tick means the day is not restricted at all, a
    * tick with no hours means the whole of that day, and hours only count on a
@@ -811,41 +911,38 @@
 
     DAYS.forEach(function (day) {
       const row = document.createElement('div');
-      row.className = 'row';
+      row.className = 'day-row';
       row.dataset.isoDay = String(day[0]);
 
-      const pick = document.createElement('div');
       const label = document.createElement('label');
-      label.className = 'hint';
+      label.className = 'day-pick';
       const tick = document.createElement('input');
       tick.type = 'checkbox';
       tick.className = 'dayPick';
       tick.value = String(day[0]);
+      tick.addEventListener('change', function () {
+        syncDay(row);
+      });
       label.appendChild(tick);
       label.append(' ' + day[1]);
-      pick.appendChild(label);
-      row.appendChild(pick);
+      row.appendChild(label);
 
-      for (let n = 0; n < SLOTS_PER_DAY; n += 1) {
-        const cell = document.createElement('div');
-        const from = document.createElement('input');
-        from.type = 'time';
-        from.className = 'daySlotStart';
-        const to = document.createElement('input');
-        to.type = 'time';
-        to.className = 'daySlotEnd';
-        cell.appendChild(from);
-        cell.append(' to ');
-        cell.appendChild(to);
-        if (n === 0) {
-          const note = document.createElement('span');
-          note.className = 'field-note';
-          note.textContent = 'Leave both empty for the whole day. An end before the start runs past midnight.';
-          cell.appendChild(note);
-        }
-        row.appendChild(cell);
-      }
+      const hours = document.createElement('div');
+      hours.className = 'day-hours';
+      hours.hidden = true;
 
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'secondary slot-add';
+      add.textContent = '+';
+      add.title = 'Add another window on this day';
+      add.addEventListener('click', function () {
+        hours.insertBefore(slotRow(row), add);
+        syncDay(row);
+      });
+      hours.appendChild(add);
+
+      row.appendChild(hours);
       host.appendChild(row);
     });
   }
@@ -853,17 +950,17 @@
   /** The schedule as the API wants it: dates, and a day list with its hours. */
   function readSchedule() {
     const days = [];
-    document.querySelectorAll('#scheduleDays .row').forEach(function (row) {
+    document.querySelectorAll('#scheduleDays .day-row').forEach(function (row) {
       const tick = row.querySelector('.dayPick');
       if (!tick || !tick.checked) return;
 
-      const starts = Array.from(row.querySelectorAll('.daySlotStart'));
-      const ends = Array.from(row.querySelectorAll('.daySlotEnd'));
       const slots = [];
-      starts.forEach(function (start, i) {
-        const end = ends[i];
-        /* A half-filled pair is not a window. Both or neither. */
-        if (start.value && end && end.value) slots.push({ start: start.value, end: end.value });
+      row.querySelectorAll('.slot-row').forEach(function (slot) {
+        const start = slot.querySelector('.daySlotStart').value;
+        const end = slot.querySelector('.daySlotEnd').value;
+        /* A half-filled pair is not a window. Both or neither — and neither
+         * on every row is how somebody says "all of this day". */
+        if (start && end) slots.push({ start: start, end: end });
       });
 
       days.push({ isoDay: Number(tick.value), slots: slots });
@@ -875,6 +972,7 @@
       days: days,
     };
   }
+
 
   /* ------------------------------------------------------------------ */
   /* Balances                                                            */
@@ -1160,6 +1258,21 @@
       el('adjustCurrencyField').hidden = el('adjustWalletKind').value === 'points';
     });
 
+    /*
+     * The three behaviours a real <select> gives for free and a built one has
+     * to be handed: toggle, close on an outside click, close on Escape. Any
+     * of them missing leaves a panel stuck open over the rest of the form.
+     */
+    el('triggerToggle').addEventListener('click', function () {
+      setTriggerMenuOpen(el('triggerMenu').hidden);
+    });
+    document.addEventListener('click', function (event) {
+      if (!el('triggerCombo').contains(event.target)) setTriggerMenuOpen(false);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') setTriggerMenuOpen(false);
+    });
+
     el('createProgram').addEventListener('click', createProgram);
     el('addBenefit').addEventListener('click', addBenefit);
     el('toggleArchived').addEventListener('click', async () => {
@@ -1174,13 +1287,9 @@
   }
 
   async function start() {
-    /*
-     * Built before anything is fetched, so the form is complete even if the
-     * network is slow — and so `syncTriggerFields` has something to sync.
-     */
-    renderTriggers();
+    /* The schedule is static and can be built immediately; the triggers come
+     * from the server and are filled in below, once the session is known. */
     renderSchedule();
-    syncTriggerFields();
 
     try {
       const me = (await window.api.request('/auth/me')).data;
@@ -1191,7 +1300,7 @@
         return;
       }
       wireVisibility();
-      await Promise.all([loadDashboard(), loadPrograms()]);
+      await Promise.all([loadTriggers(), loadDashboard(), loadPrograms()]);
     } catch (error) {
       handle(error, el('programMessage'));
     }

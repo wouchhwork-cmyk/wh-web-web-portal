@@ -91,6 +91,20 @@ button.secondary { background: #fff; color: var(--ink); border-color: var(--line
 button.danger { background: #fff; color: var(--bad); border-color: #f1c2be; }
 button:disabled { opacity: 0.55; cursor: default; }
 
+/*
+ * `hidden` HAS TO WIN, and without this it does not.
+ *
+ * The browser's own `[hidden] { display: none }` lives in the user-agent
+ * stylesheet, which loses to ANY author rule regardless of specificity. So
+ * `.row { display: flex }` below quietly re-shows every `<div class="row"
+ * hidden>` — the threshold field appeared on a form nobody had ticked a
+ * balance trigger on, and a day's hours appeared before the day was ticked.
+ *
+ * `!important` is the right tool exactly once, and this is it: a utility that
+ * must beat whatever display a component happens to set.
+ */
+[hidden] { display: none !important; }
+
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1 1 160px; }
 .actions { margin-top: 18px; display: flex; gap: 10px; align-items: center; }
@@ -222,3 +236,120 @@ tbody tr:hover { background: #fafbfc; }
  * would hide from an owner what they could delegate if they chose to.
  */
 .perm-off { opacity: 0.55; }
+
+/* --------------------------------------------------------------------------
+ * A multi-select that looks like a select.
+ *
+ * A native <select multiple> cannot hold checkboxes, and a native <select>
+ * cannot hold anything but <option>. What the triggers need is both: an
+ * <optgroup>-style hierarchy AND a tick per row, with one group locking the
+ * other out. So the control is built, and styled to match the real inputs
+ * beside it rather than announcing itself as something different.
+ * ----------------------------------------------------------------------- */
+.combo { position: relative; }
+
+/* Deliberately the same box as input/select above, down to the padding. */
+.combo-toggle {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.combo-toggle:hover { background: #fff; }
+.combo-toggle[aria-expanded='true'] { outline: 2px solid #cfe0ff; border-color: var(--accent); }
+.combo-toggle .caret { color: var(--muted); font-size: 11px; }
+.combo-toggle .placeholder { color: var(--muted); }
+
+/*
+ * Absolute, so opening it does not shove the rest of the form down the page —
+ * which is what a <select> does, and the thing this is imitating.
+ */
+.combo-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+  padding: 6px 0;
+}
+.combo-group {
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.combo-group + .combo-group-note {
+  padding: 0 12px 6px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.combo-option {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 7px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.combo-option:hover { background: #f5f8ff; }
+.combo-option input { width: auto; margin: 2px 0 0; }
+/* A disabled row still reads, so nobody asks for it again next month. */
+.combo-option.is-disabled { color: var(--muted); cursor: default; }
+.combo-option.is-disabled:hover { background: transparent; }
+.combo-option .why { display: block; font-size: 12px; color: var(--muted); }
+
+/* --------------------------------------------------------------------------
+ * The day-and-hours grid.
+ *
+ * A day's hours appear only once the day is ticked: seven days of empty time
+ * fields is a wall of controls for a schedule most programmes do not have.
+ * ----------------------------------------------------------------------- */
+.day-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.day-row:last-child { border-bottom: 0; }
+
+.day-pick {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 0;
+  min-width: 130px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.day-pick input { width: auto; }
+
+.day-hours { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1; }
+
+.slot-row { display: flex; gap: 6px; align-items: center; }
+.slot-row input { width: auto; }
+
+/* Square, so the two sit beside the fields rather than competing with Save. */
+.slot-add,
+.slot-remove {
+  padding: 7px 11px;
+  line-height: 1;
+  font-size: 15px;
+}
