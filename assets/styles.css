@@ -346,10 +346,30 @@ tbody tr:hover { background: #fafbfc; }
 .slot-row { display: flex; gap: 6px; align-items: center; }
 .slot-row input { width: auto; }
 
+/*
+ * A reward is a row of fields plus the minus that removes it, boxed so several
+ * of them read as a list rather than as one long wrap of inputs.
+ */
+.reward-row {
+  border: 1px solid var(--line, #e3e3e3);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+/* The remove button sizes to its glyph instead of claiming a field's width. */
+.reward-row > .reward-remove { flex: 0 0 auto; align-self: flex-end; }
+/* The worked example belongs under the whole row, not beside one field. */
+.reward-preview { flex: 1 1 100%; margin-top: 2px; }
+
 /* Square, so the two sit beside the fields rather than competing with Save. */
+.reward-remove,
 .slot-add,
 .slot-remove {
   padding: 7px 11px;
   line-height: 1;
   font-size: 15px;
 }
+
+/* A note that is a caveat, not a hint: the external destination records intent
+ * and forwards nothing yet, and that has to read differently from help text. */
+.field-note.warn { color: var(--bad); }

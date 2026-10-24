@@ -59,6 +59,24 @@
    */
   const MAX_SLOTS_PER_DAY = 8;
 
+  /* And the same for rewards: `benefits` is capped at 16 on both create paths. */
+  const MAX_REWARDS_PER_PROGRAM = 16;
+
+  /*
+   * THE REWARDS COME FROM THE SERVER TOO, for the reason the triggers do.
+   * `GET /rewards/benefits` carries which are selectable at all and which need
+   * a particular trigger chosen with them, so this form and the validator
+   * cannot disagree about what is offerable.
+   */
+  let BENEFITS = [];
+
+  /*
+   * The business's currency, or NULL when it has not set one. Used for labels
+   * and for how many decimal places money may be typed with — never to guess
+   * one, which is the mistake this page has made before.
+   */
+  let BUSINESS_CURRENCY = null;
+
   const el = (id) => document.getElementById(id);
 
   /*
@@ -72,9 +90,12 @@
   const itemsOf = (result) => (result.data && result.data.items) || [];
 
   let permissions = [];
-  let selectedProgram = null;
-  /* What the rule being built will carry. Cleared when the rule is created. */
-  let draftBenefits = [];
+  /*
+   * NULL = the form is creating. A refId = it is editing that programme, and
+   * Save sends a PUT instead of a POST. One form, two verbs, and the heading
+   * says which so nobody edits a programme believing they are making one.
+   */
+  let editingRefId = null;
 
   function show(target, kind, text, code) {
     target.innerHTML = '';
@@ -305,11 +326,26 @@
     const right = document.createElement('div');
     right.appendChild(pill(program.status, program.status === 'active' ? 'ok' : 'none'));
 
-    const rules = document.createElement('button');
-    rules.className = 'secondary';
-    rules.textContent = 'Rules';
-    rules.addEventListener('click', () => selectProgram(program));
-    right.appendChild(rules);
+    /*
+     * "UPDATE", NOT "RULES".
+     *
+     * A business does not think in rules. It thinks "reward DMs and story
+     * mentions, once a week, Friday evenings" — which is one programme and
+     * happens to be several rules. The form that created it is the form that
+     * edits it, so this reopens that form filled in rather than sending
+     * somebody to a separate list of the pieces it was built from.
+     *
+     * An archived programme keeps a READ-ONLY route to the same information
+     * through History, and never gets this button — see below.
+     */
+    if (permissions.indexOf('rewards.manage') !== -1 && program.status !== 'archived') {
+      const update = document.createElement('button');
+      update.className = 'secondary';
+      update.textContent = 'Update';
+      update.title = 'Reopen the full form, change anything, save once.';
+      update.addEventListener('click', () => openForEditing(program));
+      right.appendChild(update);
+    }
 
     /*
      * KEPT FOR AN ARCHIVED PROGRAMME TOO, and placed before the early return
@@ -325,10 +361,10 @@
     right.appendChild(history);
 
     /*
-     * AN ARCHIVED PROGRAMME IS A RECORD, so it keeps "Rules" — you can still
-     * read what it did — and loses every control that would change it. The
-     * server refuses those anyway; showing a button that always 409s would be
-     * a lie told twice.
+     * AN ARCHIVED PROGRAMME IS A RECORD. It keeps History — "what was this
+     * awarding last March" is the question the record exists to answer — and
+     * loses every control that would change it. The server refuses those
+     * anyway; showing a button that always 409s would be a lie told twice.
      */
     if (program.status === 'archived') {
       row.appendChild(right);
@@ -523,6 +559,7 @@
   async function createProgram() {
     const button = el('createProgram');
     const target = el('createProgramMessage');
+    const editing = editingRefId !== null;
 
     const triggers = chosenTriggers();
     /*
@@ -530,8 +567,22 @@
      * refuses all of this too — these two just save a round trip on the
      * mistakes somebody makes while still filling the form in.
      */
-    if (triggers.length > 0 && draftBenefits.length === 0) {
-      show(target, 'error', 'Add at least one reward, or the triggers award nothing.');
+    const rewards = readRewards();
+    if (rewards.error) {
+      show(target, 'error', rewards.error);
+      return;
+    }
+    /*
+     * BOTH DIRECTIONS, as on the server. A programme with triggers and no
+     * reward awards nothing; a programme with rewards and no trigger builds no
+     * rule to hang them off, so they would be accepted and silently dropped.
+     */
+    if (triggers.length === 0) {
+      show(
+        target,
+        'error',
+        'Pick at least one trigger. Rewards need something to fire them, or nothing would ever award them.',
+      );
       return;
     }
 
@@ -546,7 +597,8 @@
         triggers: triggers,
         capScope: el('ruleCapScope').value,
         holdHours: balancePicked ? 0 : Number(el('ruleHoldHours').value || 0),
-        benefits: draftBenefits,
+        benefits: rewards.benefits,
+        destination: el('rewardDestination').value,
         schedule: readSchedule(),
       };
       /* Sent only with the trigger it belongs to; on anything else the server
@@ -555,16 +607,23 @@
         body.minPointsBalance = Number(el('ruleMinPointsBalance').value || 0);
       }
 
-      await window.api.request('/rewards/programs', { method: 'POST', body: body });
+      await window.api.request(
+        editing ? '/rewards/programs/' + encodeURIComponent(editingRefId) : '/rewards/programs',
+        { method: editing ? 'PUT' : 'POST', body: body },
+      );
       show(
         target,
         'ok',
-        triggers.length > 0
-          ? 'Created as a draft, with ' +
+        editing
+          ? 'Saved. The rules it had were retired and kept — awards already made still point at ' +
+              'the version that decided them — and ' +
+              triggers.length +
+              (triggers.length === 1 ? ' rule was' : ' rules were') +
+              ' written in their place.'
+          : 'Created as a draft, with ' +
               triggers.length +
               (triggers.length === 1 ? ' rule' : ' rules') +
-              '. Switch it on when you are ready.'
-          : 'Created as a draft. It has no triggers yet, so it awards nothing.',
+              '. Switch it on when you are ready.',
       );
       resetProgramForm();
       await Promise.all([loadPrograms(), loadDashboard()]);
@@ -575,16 +634,199 @@
     }
   }
 
-  /** Back to empty, so the next programme does not inherit the last one. */
+  /**
+   * Reopens the form on an existing programme, filled in.
+   *
+   * READ FROM THE SERVER, NOT FROM THE LIST ROW. The row carries a summary —
+   * name, status, dates — and the form needs triggers, rewards, cap, hold and
+   * the schedule. `GET /rewards/programs/:refId/configuration` returns exactly
+   * the shape the PUT accepts, so what is loaded is what will be sent and
+   * neither side has to reassemble the other's model.
+   */
+  async function openForEditing(program) {
+    const target = el('createProgramMessage');
+    target.innerHTML = '';
+    try {
+      const result = await window.api.request(
+        '/rewards/programs/' + encodeURIComponent(program.refId) + '/configuration',
+      );
+      const config = (result && result.data) || {};
+
+      resetProgramForm();
+      editingRefId = program.refId;
+      el('programFormTitle').textContent = 'Update ' + config.name;
+      el('createProgram').textContent = 'Update program';
+      el('cancelEdit').hidden = false;
+
+      el('programName').value = config.name || '';
+      el('programDisplayName').value = config.displayName || '';
+      el('ruleCapScope').value = config.capScope || 'none';
+      el('ruleHoldHours').value = String(config.holdHours || 0);
+      el('rewardDestination').value = config.destination || 'internal';
+      syncDestination();
+      if (config.minPointsBalance) {
+        el('ruleMinPointsBalance').value = String(config.minPointsBalance);
+      }
+
+      /* Dates arrive as timestamps and the inputs want YYYY-MM-DD. */
+      el('scheduleStartsAt').value = dateOnly(config.schedule && config.schedule.startsAt);
+      el('scheduleEndsAt').value = dateOnly(config.schedule && config.schedule.endsAt);
+
+      fillTriggers(config.triggers || []);
+      fillSchedule((config.schedule && config.schedule.days) || []);
+      fillRewards(config.benefits || []);
+      syncTriggerFields();
+
+      /*
+       * THE ONE CASE WHERE THIS FORM CANNOT TELL THE WHOLE TRUTH.
+       *
+       * It holds ONE cap and ONE hold for the programme, because the form
+       * that creates one writes the same values onto every rule. A programme
+       * whose rules were added separately can have rules that genuinely
+       * differ — and saving here would flatten them to one answer. The server
+       * says so with `uniform`; hiding it until after the save would be
+       * finding out too late.
+       */
+      if (config.uniform === false) {
+        show(
+          target,
+          'info',
+          'This program’s rules do not all share the same cap and hold. This form holds one of ' +
+            'each, so saving will give every rule the values shown here. Cancel if that is not ' +
+            'what you want.',
+        );
+      }
+
+      el('createProgramPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      handle(error, el('programMessage'));
+    }
+  }
+
+  /** "2026-03-01T00:00:00.000Z" → "2026-03-01". Empty for anything else. */
+  function dateOnly(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+  }
+
+  function syncDestination() {
+    const external = el('rewardDestination').value === 'external';
+    const note = el('rewardDestinationNote');
+    note.textContent = external
+      ? 'Recorded on the program, and nothing is sent yet — the forwarding pipeline is not ' +
+        'built. Choose this to state the intent; rewards continue to land in Wouchh balances ' +
+        'until it is.'
+      : 'One answer for the whole program, not per reward — a customer’s balance living in two ' +
+        'places with nothing reconciling them is not a balance.';
+    note.className = external ? 'field-note warn' : 'field-note';
+  }
+
+  /** Ticks exactly the triggers the programme runs on, and no others. */
+  function fillTriggers(triggers) {
+    document.querySelectorAll('.triggerPick').forEach(function (box) {
+      box.checked = triggers.indexOf(box.value) !== -1;
+    });
+  }
+
+  /**
+   * Ticks the days and rebuilds their slots.
+   *
+   * A day with NO slots is a ticked day with the one empty pair `syncDay`
+   * leaves behind — which is how this form says "the whole of that day", and
+   * is exactly what the server sent back for one.
+   */
+  function fillSchedule(days) {
+    document.querySelectorAll('#scheduleDays .day-row').forEach(function (row) {
+      const tick = row.querySelector('.dayPick');
+      const day = days.find(function (d) {
+        return String(d.isoDay) === tick.value;
+      });
+
+      tick.checked = Boolean(day);
+      const hours = row.querySelector('.day-hours');
+      hours.querySelectorAll('.slot-row').forEach(function (slot) {
+        slot.remove();
+      });
+      syncDay(row);
+      if (!day || !day.slots || day.slots.length === 0) return;
+
+      /* syncDay left one empty pair; the first slot fills it and the rest are
+       * appended, so a three-slot day does not come back with four rows. */
+      const add = hours.querySelector('.slot-add');
+      day.slots.forEach(function (slot, index) {
+        if (index > 0) hours.insertBefore(slotRow(row), add);
+        const rows = hours.querySelectorAll('.slot-row');
+        const target = rows[index];
+        target.querySelector('.daySlotStart').value = slot.start;
+        target.querySelector('.daySlotEnd').value = slot.end;
+      });
+      syncDay(row);
+    });
+  }
+
+  /** One row per reward, in the order the programme holds them. */
+  function fillRewards(benefits) {
+    const host = el('rewardRows');
+    host.innerHTML = '';
+
+    /* A programme with no rewards still gets its one empty row, because the
+     * form is never a form with nothing in it. */
+    const list = benefits.length > 0 ? benefits : [null];
+    const digits = currencyDigits(BUSINESS_CURRENCY);
+
+    list.forEach(function (benefit) {
+      const row = rewardRow();
+      host.appendChild(row);
+      if (!benefit) return;
+
+      row.querySelector('.rewardKind').value = benefit.benefitKind;
+      row.querySelector('.rewardMode').value = benefit.awardMode || 'fixed';
+
+      const config = benefit.config || {};
+      if (benefit.benefitKind === 'grant_points') {
+        row.querySelector('.rewardPoints').value = String(config.points || '');
+      } else if (benefit.benefitKind === 'grant_currency') {
+        row.querySelector('.rewardMoney').value = fromMinorUnits(config.minorUnits, digits);
+      } else if (benefit.benefitKind === 'convert_value') {
+        row.querySelector('.rewardBurnPoints').value = String(config.burnPoints || '');
+        row.querySelector('.rewardMoney').value = fromMinorUnits(config.grantMinor, digits);
+      }
+    });
+
+    syncRewards();
+  }
+
+  /**
+   * 250 → "2.50". The inverse of `toMinorUnits`, and by string for the same
+   * reason: dividing by 100 reintroduces exactly the float error that padding
+   * and concatenating avoids.
+   */
+  function fromMinorUnits(minor, digits) {
+    if (minor === null || minor === undefined) return '';
+    const text = String(Math.abs(Math.trunc(Number(minor) || 0)));
+    if (digits === 0) return text;
+    const padded = text.padStart(digits + 1, '0');
+    return padded.slice(0, padded.length - digits) + '.' + padded.slice(padded.length - digits);
+  }
+
+  /** Back to empty AND back to creating, so neither carries into the next one. */
   function resetProgramForm() {
+    editingRefId = null;
+    el('programFormTitle').textContent = 'New program';
+    el('createProgram').textContent = 'Save program';
+    el('cancelEdit').hidden = true;
+    el('programEditNotice').innerHTML = '';
     el('programName').value = '';
     el('programDisplayName').value = '';
     el('ruleCapScope').value = 'none';
     el('ruleHoldHours').value = '0';
+    el('ruleMinPointsBalance').value = '100';
+    el('rewardDestination').value = 'internal';
+    syncDestination();
     el('scheduleStartsAt').value = '';
     el('scheduleEndsAt').value = '';
-    draftBenefits = [];
-    renderDraft();
+    renderRewards();
     renderTriggers();
     renderSchedule();
     syncTriggerFields();
@@ -596,90 +838,20 @@
   /* Rules                                                               */
   /* ------------------------------------------------------------------ */
 
-  function ruleRow(rule) {
-    const row = document.createElement('div');
-    row.className = 'row';
-
-    const left = document.createElement('div');
-    const label = TRIGGERS.find((t) => t.key === rule.triggerKind);
-    const name = document.createElement('strong');
-    name.textContent = label ? label.label : rule.triggerKind;
-    left.appendChild(name);
-
-    const meta = document.createElement('div');
-    meta.className = 'hint';
-    const cap = rule.capScope === 'none' ? 'no cap' : rule.capCount + ' per ' + rule.capScope;
-    const hold = rule.holdHours > 0 ? rule.holdHours + 'h hold' : 'granted immediately';
-    meta.textContent = cap + ' · ' + hold + ' · v' + rule.version;
-    left.appendChild(meta);
-    row.appendChild(left);
-
-    const right = document.createElement('div');
-    right.appendChild(pill(rule.isActive ? 'on' : 'off', rule.isActive ? 'ok' : 'none'));
-
-    /*
-     * THE SWITCH THAT HAD NO BUTTON.
-     *
-     * The endpoint existed and nothing called it, so a rule could be created
-     * and never turned off again from here — the pill reported a state the
-     * screen could not change. Behind `rewards.manage` like every other
-     * control, and absent on an archived programme, which awards nothing
-     * whatever its rules say.
-     */
-    const archived = selectedProgram && selectedProgram.status === 'archived';
-    if (!archived && permissions.indexOf('rewards.manage') !== -1) {
-      const toggle = document.createElement('button');
-      toggle.className = 'secondary';
-      toggle.textContent = rule.isActive ? 'Switch off' : 'Switch on';
-      toggle.title = rule.isActive
-        ? 'Stop this rule awarding. The programme and its other rules carry on.'
-        : 'Let this rule start awarding again.';
-      toggle.addEventListener('click', async () => {
-        toggle.disabled = true;
-        try {
-          await window.api.request('/rewards/rules/' + rule.refId + '/active', {
-            method: 'PATCH',
-            /* A real boolean: the server rejects anything else now, which is
-             * what stopped a typo quietly switching a money rule off. */
-            body: { isActive: !rule.isActive },
-          });
-          await selectProgram(selectedProgram);
-        } catch (error) {
-          handle(error, el('ruleMessage'));
-        } finally {
-          toggle.disabled = false;
-        }
-      });
-      right.appendChild(toggle);
-    }
-
-    row.appendChild(right);
-    return row;
-  }
-
-  async function selectProgram(program) {
-    selectedProgram = program;
-    el('rulesPanel').hidden = false;
-    el('rulesProgramName').textContent = program.name;
-
-    const rows = el('ruleRows');
-    rows.innerHTML = '';
-    try {
-      const result = await window.api.request(
-        '/rewards/rules?programRefId=' + encodeURIComponent(program.refId),
-      );
-      const items = itemsOf(result);
-      if (items.length === 0) {
-        show(el('ruleMessage'), 'info', 'No rules yet. A program with no rules awards nothing.');
-        return;
-      }
-      el('ruleMessage').innerHTML = '';
-      items.forEach((rule) => rows.appendChild(ruleRow(rule)));
-    } catch (error) {
-      handle(error, el('ruleMessage'));
-    }
-  }
-
+  /*
+   * THE RULES PANEL IS GONE, and with it `ruleRow` and `selectProgram`.
+   *
+   * A programme row used to open a list of the rules it was built from, each
+   * with its own on/off switch. Nothing reaches that list any more: "Rules"
+   * became "Update", which reopens the whole form instead, because a business
+   * thinks in programmes and not in the rules a programme expands into.
+   *
+   * WHAT WENT WITH IT, said rather than quietly dropped: the per-rule switch.
+   * Unticking a trigger in the form now retires that trigger's rule, which is
+   * the same outcome by the route somebody would look for it on. The endpoint
+   * it called (`PATCH /rewards/rules/:refId/active`) is untouched and still
+   * works.
+   */
 
   /* ------------------------------------------------------------------ */
   /* The one form                                                        */
@@ -839,6 +1011,9 @@
     el('holdRow').hidden = balancePicked;
     if (balancePicked) el('ruleHoldHours').value = '0';
 
+    /* A conversion is only offerable while the balance trigger is chosen, so
+     * the rewards have to be re-read whenever the triggers move. */
+    syncRewards();
     renderTriggerSummary();
   }
 
@@ -1112,147 +1287,440 @@
   /* Building a rule                                                     */
   /* ------------------------------------------------------------------ */
 
-  function describeBenefit(benefit) {
-    const amount = benefit.awardMode === 'up_to' ? 'up to ' + benefit.awardCap : 'exactly ';
-    if (benefit.benefitKind === 'grant_points') {
-      return amount + (benefit.awardMode === 'up_to' ? ' points' : benefit.config.points + ' points');
+  /**
+   * MONEY IS TYPED THE WAY IT IS SPOKEN, and converted here.
+   *
+   * The wire carries MINOR UNITS as an integer, which is the only honest way
+   * to put money in JSON — 0.1 + 0.2 is not 0.3 in a double, and a rounding
+   * error in a reward is money. But nobody thinks in minor units, and the old
+   * field asked for them while claiming "500 is ₹5.00" about a business that
+   * may never have mentioned rupees. So the field takes 5.00 and this turns
+   * it into 500.
+   *
+   * THE SCALE COMES FROM THE CURRENCY, never a hardcoded two. JPY has no
+   * minor unit and KWD has three; multiplying by 100 would be wrong in both.
+   */
+  function currencyDigits(code) {
+    if (!code) return 2;
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: code })
+        .resolvedOptions()
+        .maximumFractionDigits;
+    } catch (error) {
+      return 2;
     }
-    if (benefit.benefitKind === 'grant_currency') {
-      return (
-        amount +
-        (benefit.awardMode === 'up_to' ? '' : benefit.config.minorUnits) +
-        ' ' +
-        benefit.config.currencyCode
-      );
-    }
-    if (benefit.benefitKind === 'convert_value') {
-      return (
-        benefit.config.burnPoints +
-        ' points become ' +
-        benefit.config.grantMinor +
-        ' ' +
-        benefit.config.currencyCode
-      );
-    }
-    return 'the item ' + benefit.config.itemRef;
   }
 
-  function renderDraft() {
-    const benefitList = el('benefitList');
-    benefitList.innerHTML = '';
-    draftBenefits.forEach(function (benefit, index) {
-      const row = document.createElement('div');
-      row.className = 'row';
-      const left = document.createElement('div');
-      left.textContent = describeBenefit(benefit);
-      row.appendChild(left);
-      const remove = document.createElement('button');
-      remove.className = 'secondary';
-      remove.textContent = 'Remove';
-      remove.addEventListener('click', function () {
-        draftBenefits.splice(index, 1);
-        renderDraft();
+  /**
+   * "12.34" → 1234. Null for anything that is not money.
+   *
+   * BY STRING, NOT BY ARITHMETIC. `2.675 * 100` is 267.49999999999997, so the
+   * obvious implementation loses a unit on values a person would type. Padding
+   * the fraction and concatenating cannot.
+   *
+   * The pattern has NO SIGN IN IT, so "-5" is rejected by shape rather than by
+   * a comparison somebody could forget to write.
+   */
+  function toMinorUnits(text, digits) {
+    const trimmed = String(text == null ? '' : text).trim();
+    if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+    const parts = trimmed.split('.');
+    const fraction = parts[1] || '';
+    /* More decimal places than the currency has is not a rounding question —
+     * it is a number this currency cannot express, so it is refused. */
+    if (fraction.length > digits) return null;
+    const padded = (fraction + '0000000000').slice(0, digits);
+    const minor = Number(parts[0] + padded);
+    return Number.isSafeInteger(minor) ? minor : null;
+  }
+
+  /**
+   * Points are WHOLE and never negative. Null for anything else.
+   *
+   * Again by shape: `Number("2.5")` is a perfectly good number and `parseInt`
+   * would quietly read it as 2, which is how a business ends up awarding half
+   * of what it typed. There is no such thing as half a point.
+   */
+  function toWholePoints(text) {
+    const trimmed = String(text == null ? '' : text).trim();
+    if (!/^\d+$/.test(trimmed)) return null;
+    const points = Number(trimmed);
+    return Number.isSafeInteger(points) ? points : null;
+  }
+
+  /** The currency's name for a label, or a plain word when none is set. */
+  function moneyUnitLabel() {
+    return BUSINESS_CURRENCY || 'money';
+  }
+
+  /**
+   * A field, its label and its note.
+   *
+   * THE NOTE SPAN IS ALWAYS BUILT, even when it starts empty. Building it only
+   * when there was text to put in it left `syncRewards` dereferencing null on
+   * the money field — which threw PART WAY THROUGH the row loop, so every row
+   * after the first conversion kept whatever it was showing. A points row sat
+   * there offering "Amount" and "Every … points" because the code that would
+   * have hidden them never ran.
+   */
+  function labelled(text, control, note) {
+    const box = document.createElement('div');
+    const label = document.createElement('label');
+    label.textContent = text;
+    box.appendChild(label);
+    box.appendChild(control);
+    const hint = document.createElement('span');
+    hint.className = 'field-note';
+    hint.textContent = note || '';
+    box.appendChild(hint);
+    return box;
+  }
+
+  function numberInput(className, placeholder, step) {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = className;
+    input.min = '0';
+    input.step = step;
+    input.placeholder = placeholder;
+    input.addEventListener('input', syncRewards);
+    return input;
+  }
+
+  /**
+   * One reward, with the button that removes it.
+   *
+   * EVERY FIELD LIVES IN THE ROW. The old form had one set of inputs and an
+   * "Add reward" button that copied them into a list, which meant what was on
+   * screen and what would be saved were two different things — somebody could
+   * type an amount, not press the button, press Save, and silently lose it.
+   * Now the rows ARE the answer and the global save reads them.
+   */
+  function rewardRow() {
+    const row = document.createElement('div');
+    row.className = 'row reward-row';
+
+    const kind = document.createElement('select');
+    kind.className = 'rewardKind';
+    BENEFITS.forEach(function (benefit) {
+      const option = document.createElement('option');
+      option.value = benefit.key;
+      option.textContent = benefit.label;
+      /* Marked here, enabled or disabled by syncRewards — which has to run
+       * against the triggers anyway, so there is one place that decides. */
+      option.dataset.available = String(benefit.available);
+      option.dataset.requires = (benefit.requiresTrigger || []).join(',');
+      kind.appendChild(option);
+    });
+    kind.addEventListener('change', syncRewards);
+    row.appendChild(labelled('Reward', kind));
+
+    const mode = document.createElement('select');
+    mode.className = 'rewardMode';
+    [
+      ['fixed', 'Exactly'],
+      ['up_to', 'Up to'],
+    ].forEach(function (pair) {
+      const option = document.createElement('option');
+      option.value = pair[0];
+      option.textContent = pair[1];
+      mode.appendChild(option);
+    });
+    row.appendChild(
+      labelled(
+        'Exactly, or up to',
+        mode,
+        '“Exactly” is a promise and is never shaved. “Up to” is a ceiling the scoring engine may scale down.',
+      ),
+    );
+
+    const points = numberInput('rewardPoints', '20', '1');
+    row.appendChild(labelled('Points', points, 'Whole points. There is no half a point.'));
+
+    const money = numberInput('rewardMoney', '5.00', '0.01');
+    const moneyBox = labelled('Amount', money, '');
+    /* Hidden until syncRewards says otherwise, so a row never flashes every
+     * field it owns between being appended and being read. */
+    moneyBox.hidden = true;
+    row.appendChild(moneyBox);
+
+    /*
+     * THE CONVERSION IS A SLAB, and it is asked for as one.
+     *
+     * "Every 20 points becomes 2.00" is not the same offer as "every 10 points
+     * becomes 1.00" even though the ratio is identical: with the first, a
+     * balance of 10 converts nothing and a balance of 50 converts 4.00 and
+     * leaves 10 behind. The engine already works in whole slabs — it takes
+     * floor(balance / burnPoints) of them — so the form has to show the slab
+     * rather than two numbers that look like a rate.
+     */
+    const burn = numberInput('rewardBurnPoints', '20', '1');
+    const burnBox = labelled('Every … points', burn, 'Spent from the customer, a slab at a time.');
+    burnBox.hidden = true;
+    row.appendChild(burnBox);
+
+    const preview = document.createElement('div');
+    preview.className = 'field-note reward-preview';
+    row.appendChild(preview);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'secondary reward-remove';
+    remove.textContent = '−';
+    remove.title = 'Remove this reward';
+    remove.addEventListener('click', function () {
+      row.remove();
+      syncRewards();
+    });
+    row.appendChild(remove);
+
+    return row;
+  }
+
+  /** One row to start with, exactly as a day starts with one slot. */
+  function renderRewards() {
+    const host = el('rewardRows');
+    host.innerHTML = '';
+    host.appendChild(rewardRow());
+    syncRewards();
+  }
+
+  /**
+   * Keeps every row honest about the triggers currently chosen, and the add
+   * and remove buttons honest about what is still possible.
+   *
+   * THE SAME TWO RULES THE API ENFORCES, no more and no less: a reward with
+   * nothing behind it cannot be chosen, and a conversion needs the balance
+   * trigger. Greying them out is why nobody has to discover that by being
+   * refused — it is not what makes it true.
+   */
+  function syncRewards() {
+    const chosen = chosenTriggers();
+    const rows = document.querySelectorAll('#rewardRows .reward-row');
+    const digits = currencyDigits(BUSINESS_CURRENCY);
+
+    rows.forEach(function (row) {
+      const kind = row.querySelector('.rewardKind');
+
+      Array.prototype.forEach.call(kind.options, function (option) {
+        const requires = option.dataset.requires ? option.dataset.requires.split(',') : [];
+        const triggerOk =
+          requires.length === 0 ||
+          requires.some(function (t) {
+            return chosen.indexOf(t) !== -1;
+          });
+        option.disabled = option.dataset.available !== 'true' || !triggerOk;
       });
-      row.appendChild(remove);
-      benefitList.appendChild(row);
+
+      /*
+       * A SELECTION THAT HAS JUST BECOME INVALID IS MOVED, not left sitting
+       * there disabled. A <select> keeps showing a disabled option it already
+       * holds, and its value still submits — so unticking the balance trigger
+       * while a conversion row was open would have sent a conversion the
+       * server then refuses, with the screen showing it as chosen.
+       */
+      if (kind.selectedOptions.length && kind.selectedOptions[0].disabled) {
+        const firstUsable = Array.prototype.find.call(kind.options, function (o) {
+          return !o.disabled;
+        });
+        kind.value = firstUsable ? firstUsable.value : '';
+      }
+
+      const chosenKind = kind.value;
+      const isConvert = chosenKind === 'convert_value';
+      const isMoney = chosenKind === 'grant_currency';
+      const isPoints = chosenKind === 'grant_points';
+
+      /* The WRAPPER, not the input: hiding the box alone strands its label. */
+      row.querySelector('.rewardPoints').parentNode.hidden = !isPoints;
+      row.querySelector('.rewardMoney').parentNode.hidden = !(isMoney || isConvert);
+      row.querySelector('.rewardBurnPoints').parentNode.hidden = !isConvert;
+
+      const money = row.querySelector('.rewardMoney');
+      money.step = digits === 0 ? '1' : '0.' + '0'.repeat(digits - 1) + '1';
+      money.parentNode.querySelector('.field-note').textContent = BUSINESS_CURRENCY
+        ? 'In ' + BUSINESS_CURRENCY + ', as you would write it — ' + (digits === 0 ? '5' : '5.' + '0'.repeat(digits)) + '.'
+        : 'This business has no currency set yet, so saving a money reward will ask you to set one.';
+      money.parentNode.querySelector('label').textContent = isConvert
+        ? '… becomes (' + moneyUnitLabel() + ')'
+        : 'Amount (' + moneyUnitLabel() + ')';
+
+      /*
+       * Neither an item nor a conversion can be "up to". Six tenths of a free
+       * coffee is nothing, and a conversion is a stated exchange rate — if a
+       * factor could shave it, 20 points would sometimes buy 2.00 and
+       * sometimes 1.20, which is not a thing a business can explain.
+       */
+      /*
+       * "UP TO" ONLY WHERE THERE IS SOMETHING TO SCALE, and which kinds those
+       * are comes from the server with the rest of the catalogue rather than
+       * being named here. A conversion is a stated exchange rate: if a factor
+       * could shave it, 20 points would sometimes buy 2.00 and sometimes 1.20.
+       */
+      const entry = BENEFITS.find(function (b) {
+        return b.key === chosenKind;
+      });
+      const mode = row.querySelector('.rewardMode');
+      const exactOnly = !entry || entry.scalable !== true;
+      if (exactOnly) mode.value = 'fixed';
+      mode.disabled = exactOnly;
+
+      row.querySelector('.reward-preview').textContent = isConvert
+        ? previewConversion(row, digits)
+        : '';
+
+      row.querySelector('.reward-remove').disabled = rows.length === 1;
     });
 
+    el('addReward').disabled = rows.length >= MAX_REWARDS_PER_PROGRAM;
   }
 
-  function addBenefit() {
-    const kind = el('benefitKind').value;
-    const mode = el('benefitMode').value;
-    const amount = Number(el('benefitAmount').value || 0);
+  /**
+   * Says the slab back in words, with a worked example.
+   *
+   * This is the whole reason the slab is asked for as a slab: "every 20 points
+   * becomes 2.00" and "every 10 points becomes 1.00" look like the same rate
+   * and are not, and the only way to make that visible is to show what happens
+   * to a balance that does not divide evenly.
+   */
+  function previewConversion(row, digits) {
+    const burn = toWholePoints(row.querySelector('.rewardBurnPoints').value);
+    const minor = toMinorUnits(row.querySelector('.rewardMoney').value, digits);
+    if (!burn || minor === null || minor < 1) return '';
 
-    /*
-     * Caught here rather than left to the server. Every amount schema requires
-     * a positive number, so a blank field becomes a 422 that says "too small"
-     * about a field the person has not filled in — which reads like a bug
-     * rather than an instruction.
-     */
-    if (kind === 'issue_entitlement') {
-      if (!el('benefitItemRef').value.trim()) {
-        show(el('createProgramMessage'), 'error', 'Give the item a reference.');
-        return;
+    const example = burn * 2 + Math.floor(burn / 2);
+    const slabs = Math.floor(example / burn);
+    const left = example - slabs * burn;
+    return (
+      'Every ' +
+      burn +
+      ' points becomes ' +
+      money(minor, BUSINESS_CURRENCY) +
+      '. A balance of ' +
+      example +
+      ' converts ' +
+      money(minor * slabs, BUSINESS_CURRENCY) +
+      ' and leaves ' +
+      left +
+      ' points behind.'
+    );
+  }
+
+  /**
+   * Every row, as the API wants them — or the first thing that is wrong.
+   *
+   * REFUSED HERE RATHER THAN BY THE SERVER only where the answer is local and
+   * obvious. The server refuses all of it too; these messages exist because
+   * "expected integer, received number" about `benefits[1].config.points` is
+   * a true sentence that helps nobody filling in a form.
+   */
+  function readRewards() {
+    const digits = currencyDigits(BUSINESS_CURRENCY);
+    const benefits = [];
+    const rows = document.querySelectorAll('#rewardRows .reward-row');
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      const kind = row.querySelector('.rewardKind').value;
+      const mode = row.querySelector('.rewardMode').value;
+      const where = rows.length === 1 ? 'The reward' : 'Reward ' + (index + 1);
+
+      if (!kind) return { error: where + ' has nothing chosen.' };
+
+      const benefit = { benefitKind: kind, awardMode: mode, awardCap: null, config: {} };
+
+      if (kind === 'grant_points') {
+        const points = toWholePoints(row.querySelector('.rewardPoints').value);
+        if (points === null || points < 1) {
+          return { error: where + ' needs a whole number of points, 1 or more.' };
+        }
+        benefit.config = { points: points };
+        if (mode === 'up_to') benefit.awardCap = points;
+      } else if (kind === 'grant_currency') {
+        const minor = toMinorUnits(row.querySelector('.rewardMoney').value, digits);
+        if (minor === null) {
+          return { error: where + ' needs an amount of money — ' + describeMoneyShape(digits) };
+        }
+        if (minor < 1) return { error: where + ' awards nothing. Enter an amount above zero.' };
+        /*
+         * NO CURRENCY IS SENT. Unstated means the business's own, which the
+         * server resolves; sending one here is how a hardcoded 'INR' used to
+         * make a business pay in a currency it had never mentioned.
+         */
+        benefit.config = { minorUnits: minor };
+        if (mode === 'up_to') benefit.awardCap = minor;
+      } else if (kind === 'convert_value') {
+        const burn = toWholePoints(row.querySelector('.rewardBurnPoints').value);
+        if (burn === null || burn < 1) {
+          return { error: where + ' needs a whole number of points to spend, 1 or more.' };
+        }
+        const minor = toMinorUnits(row.querySelector('.rewardMoney').value, digits);
+        if (minor === null) {
+          return { error: where + ' needs what the points become — ' + describeMoneyShape(digits) };
+        }
+        if (minor < 1) {
+          return { error: where + ' converts points into nothing. Enter an amount above zero.' };
+        }
+        benefit.config = { burnPoints: burn, grantMinor: minor };
+      } else {
+        /* Unreachable while the only other kind is unavailable, and here so it
+         * stays unreachable rather than silently sending an empty config. */
+        return { error: where + ' is not a reward that can be saved yet.' };
       }
-    } else if (amount < 1) {
-      show(el('createProgramMessage'), 'error', 'Enter how much this awards.');
-      return;
-    }
-    if (kind === 'convert_value' && Number(el('benefitBurnPoints').value || 0) < 1) {
-      show(el('createProgramMessage'), 'error', 'Enter how many points a conversion spends.');
-      return;
-    }
-    el('createProgramMessage').innerHTML = '';
 
-    const benefit = { benefitKind: kind, awardMode: mode, awardCap: null, config: {} };
-
-    /*
-     * NO CURRENCY IS SENT, and that is the change.
-     *
-     * This used to fall back to a hardcoded 'INR' — so a business that had
-     * never said anything about rupees got a rule paying in them, and the
-     * screen looked like it had worked. Omitting it means "the business's
-     * own", which the server resolves; if the business has not set one, it
-     * refuses with ENTERPRISE_CURRENCY_NOT_SET and the handler below says so
-     * and offers to take them there.
-     */
-    if (kind === 'grant_points') {
-      benefit.config = { points: amount };
-    } else if (kind === 'grant_currency') {
-      benefit.config = { minorUnits: amount };
-    } else if (kind === 'convert_value') {
-      benefit.config = {
-        burnPoints: Number(el('benefitBurnPoints').value || 0),
-        grantMinor: amount,
-      };
-    } else {
-      benefit.config = { itemRef: el('benefitItemRef').value.trim(), validForDays: null };
+      benefits.push(benefit);
     }
 
-    /*
-     * "Up to" needs a ceiling for the factor to scale, and the amount field IS
-     * that ceiling. The server refuses it on a kind that cannot be divided, so
-     * the UI disables the option rather than letting somebody be rejected.
-     */
-    if (mode === 'up_to') {
-      benefit.awardCap = amount;
-      if (kind === 'grant_points') benefit.config.points = amount;
-      if (kind === 'grant_currency') benefit.config.minorUnits = amount;
-    }
-
-    draftBenefits.push(benefit);
-    renderDraft();
+    return { benefits: benefits };
   }
 
+  function describeMoneyShape(digits) {
+    return digits === 0
+      ? 'a whole number, as this currency has no minor unit.'
+      : 'a number with at most ' + digits + ' decimal places, and never negative.';
+  }
+
+  /**
+   * The business's currency, for labels and for the decimal places money may
+   * be typed with. NULL IS A REAL ANSWER — a business that has not set one —
+   * and so is a 403 from a user who may manage rewards without being allowed
+   * to read enterprise settings. Neither is an error worth stopping the page
+   * for: the save still refuses, and the refusal still offers the way out.
+   */
+  async function loadBusinessCurrency() {
+    try {
+      const result = await window.api.request('/enterprises/current');
+      const data = result && result.data ? result.data : result;
+      BUSINESS_CURRENCY = (data && data.currencyCode) || null;
+    } catch (error) {
+      BUSINESS_CURRENCY = null;
+    }
+  }
+
+  /** The same list the create endpoints validate against, never a copy. */
+  async function loadBenefits() {
+    const result = await window.api.request('/rewards/benefits');
+    BENEFITS = itemsOf(result);
+  }
 
   function wireVisibility() {
     el('createProgramPanel').hidden = permissions.indexOf('rewards.manage') === -1;
 
-    el('benefitKind').addEventListener('change', () => {
-      const kind = el('benefitKind').value;
-      const isItem = kind === 'issue_entitlement';
-      const isConvert = kind === 'convert_value';
-      /* The WRAPPER, not the input: hiding the box alone strands its label. */
-      el('benefitItemRefField').hidden = !isItem;
-      el('benefitBurnPointsField').hidden = !isConvert;
-      el('benefitAmountField').hidden = isItem;
-      /*
-       * An item cannot be "up to" — six tenths of a free coffee is nothing.
-       * The server refuses it; disabling the option here means nobody has to
-       * discover that by being rejected.
-       */
-      /*
-       * Neither an item nor a conversion can be "up to". Six tenths of a free
-       * coffee is nothing, and a conversion is a stated exchange rate — if a
-       * factor could shave it, 30 points would sometimes buy 50 rupees and
-       * sometimes 30, which is not a thing a business can explain.
-       */
-      const mode = el('benefitMode');
-      const fixedOnly = isItem || isConvert;
-      mode.value = fixedOnly ? 'fixed' : mode.value;
-      mode.disabled = fixedOnly;
+    el('addReward').addEventListener('click', function () {
+      el('rewardRows').appendChild(rewardRow());
+      syncRewards();
     });
+
+    /*
+     * SAYS WHAT "EXTERNAL" ACTUALLY DOES TODAY.
+     *
+     * The choice is stored, audited and versioned like any other setting, and
+     * NOTHING IS FORWARDED YET — the pipeline is designed in
+     * `docs/reward-programs-design.md` §13 and not built. A toggle that looks
+     * like it sends value somewhere and silently does not is the exact failure
+     * this codebase keeps rediscovering, so the screen says so instead.
+     */
+    el('rewardDestination').addEventListener('change', syncDestination);
 
     el('adjustWalletKind').addEventListener('change', () => {
       el('adjustCurrencyField').hidden = el('adjustWalletKind').value === 'points';
@@ -1274,12 +1742,18 @@
     });
 
     el('createProgram').addEventListener('click', createProgram);
-    el('addBenefit').addEventListener('click', addBenefit);
+    /* Abandons an edit without saving it, and puts the form back to creating
+     * — leaving it half-filled with somebody else's programme is how the next
+     * "new programme" quietly becomes an edit of the last one. */
+    el('cancelEdit').addEventListener('click', function () {
+      resetProgramForm();
+      el('createProgramMessage').innerHTML = '';
+    });
     el('toggleArchived').addEventListener('click', async () => {
       showingArchived = !showingArchived;
-      /* A programme selected in one view should not stay open in the other. */
-      el('rulesPanel').hidden = true;
-      selectedProgram = null;
+      /* An edit begun in one view should not carry into the other — the
+       * programme it refers to may not even be listed there. */
+      if (editingRefId !== null) resetProgramForm();
       await loadPrograms();
     });
     el('lookUp').addEventListener('click', lookUp);
@@ -1300,7 +1774,16 @@
         return;
       }
       wireVisibility();
-      await Promise.all([loadTriggers(), loadDashboard(), loadPrograms()]);
+      await Promise.all([
+        loadTriggers(),
+        loadBenefits(),
+        loadBusinessCurrency(),
+        loadDashboard(),
+        loadPrograms(),
+      ]);
+      /* After both, because a reward row is built from the served catalogue
+       * and labelled with the business's currency. */
+      renderRewards();
     } catch (error) {
       handle(error, el('programMessage'));
     }

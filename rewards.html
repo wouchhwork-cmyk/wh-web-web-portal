@@ -47,7 +47,8 @@
     </div>
 
     <div class="panel" id="createProgramPanel" hidden>
-      <h2>New program</h2>
+      <h2 id="programFormTitle">New program</h2>
+      <div id="programEditNotice" hidden></div>
       <p class="hint">
         One form, one save. The whole programme &mdash; what sets it off, how often it may pay,
         when it runs and what it gives &mdash; is created together or not at all, so there is no
@@ -154,61 +155,33 @@
 
       <h3>What they get</h3>
       <p class="hint">
-        A rule can award several things at once &mdash; 20 points <em>and</em> a free coffee. They
-        are applied together or not at all, so a customer is never told they earned both and
-        given one.
+        A rule can award several things at once &mdash; 20 points <em>and</em> a voucher. They are
+        applied together or not at all, so a customer is never told they earned both and given
+        one. Use <strong>+</strong> to add another, <strong>&minus;</strong> to drop one.
       </p>
-      <div id="benefitList"></div>
       <div class="row">
         <div>
-          <label for="benefitKind">Reward</label>
-          <select id="benefitKind">
-            <option value="grant_points">Points</option>
-            <option value="grant_currency">Money</option>
-            <option value="issue_entitlement">An item</option>
-            <option value="convert_value">Turn points into money</option>
+          <label for="rewardDestination">Where the value goes</label>
+          <select id="rewardDestination">
+            <option value="internal" selected>Keep it in Wouchh</option>
+            <option value="external">Send it to an external system</option>
           </select>
-          <span class="field-note">
-            Points and money are separate balances. An item is a claim on something you hand over.
-          </span>
-        </div>
-        <div>
-          <label for="benefitMode">Exactly, or up to</label>
-          <select id="benefitMode">
-            <option value="fixed">Exactly</option>
-            <option value="up_to">Up to</option>
-          </select>
-          <span class="field-note">
-            &ldquo;Exactly&rdquo; is a promise and is never shaved. &ldquo;Up to&rdquo; is a
-            ceiling the scoring engine may scale down later.
-          </span>
-        </div>
-        <div id="benefitAmountField">
-          <label for="benefitAmount">Amount</label>
-          <input id="benefitAmount" type="number" min="1" step="1" placeholder="20" />
-          <span class="field-note">
-            Whole points, or money in minor units &mdash; 500 is &#8377;5.00.
-          </span>
-        </div>
-        <div id="benefitItemRefField" hidden>
-          <label for="benefitItemRef">Item reference</label>
-          <input id="benefitItemRef" maxlength="64" placeholder="FREE_COFFEE" />
-          <span class="field-note">Your own code for the thing being given.</span>
-        </div>
-        <div id="benefitBurnPointsField" hidden>
-          <label for="benefitBurnPoints">Points to spend</label>
-          <input id="benefitBurnPoints" type="number" min="1" step="1" placeholder="30" />
-          <span class="field-note">
-            Taken from the customer each time this converts. Nothing happens if they cannot cover it.
+          <span class="field-note" id="rewardDestinationNote">
+            One answer for the whole program, not per reward &mdash; a customer&rsquo;s balance
+            living in two places with nothing reconciling them is not a balance.
           </span>
         </div>
       </div>
+      <div id="rewardRows"></div>
       <div class="actions">
-        <button class="secondary" id="addBenefit">Add reward</button>
+        <button type="button" class="secondary" id="addReward" title="Add another reward">
+          +
+        </button>
       </div>
 
       <div class="actions">
         <button id="createProgram">Save program</button>
+        <button class="secondary" id="cancelEdit" hidden>Cancel</button>
       </div>
       <div id="createProgramMessage"></div>
     </div>
@@ -224,17 +197,6 @@
       <div id="historyMessage"></div>
       <div id="historyRows"></div>
     </div>
-
-    <div class="panel" id="rulesPanel" hidden>
-      <h2>Rules in <span id="rulesProgramName"></span></h2>
-      <p class="hint">
-        Rules are evaluated in priority order and several can fire on one event &mdash; a base
-        rule and a bonus rule both granting is intended, and each keeps its own cap.
-      </p>
-      <div id="ruleMessage"></div>
-      <div id="ruleRows"></div>
-    </div>
-
 
     <div class="panel">
       <h2>A customer&rsquo;s balance</h2>
@@ -287,9 +249,10 @@
           <label for="adjustAmount">Amount</label>
           <input id="adjustAmount" type="number" step="1" placeholder="-50" />
           <span class="field-note">
-            Positive adds, negative takes away. Money is in minor units &mdash; 500 is
-            &#8377;5.00. A debit can take the balance below zero, and that is real debt the next
-            award pays off.
+            Positive adds, negative takes away. Money is in the chosen currency's
+            <em>minor units</em>, so 500 is 5.00 where a currency has two decimal places and 500
+            whole units where it has none, as JPY does. A debit can take the balance below zero,
+            and that is real debt the next award pays off.
           </span>
         </div>
       </div>
