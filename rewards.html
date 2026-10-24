@@ -57,25 +57,13 @@
           <input id="programName" maxlength="120" placeholder="Monsoon loyalty" />
           <span class="field-note">For you to recognise. Customers never see it.</span>
         </div>
-        <div>
-          <label for="programTimezone">Timezone</label>
-          <input id="programTimezone" maxlength="64" placeholder="Asia/Kolkata" />
-          <span class="field-note">
-            Decides when &ldquo;once a day&rdquo; resets and when a happy hour opens. Set it to
-            where the business actually is &mdash; it cannot be changed casually later.
-          </span>
-        </div>
       </div>
-      <div class="row">
-        <div>
-          <label for="programCurrency">Default currency</label>
-          <input id="programCurrency" maxlength="3" placeholder="INR" />
-          <span class="field-note">
-            Three-letter code. Used when a rule grants money without naming one. Leave empty for a
-            points-only program.
-          </span>
-        </div>
-      </div>
+      <p class="hint">
+        Timezone and currency are <strong>not</strong> set here any more &mdash; they belong to the
+        business and are set once in
+        <a href="settings.html">business settings</a>. Every programme reads the same ones, so two
+        of them can never disagree about when Tuesday starts or what money means.
+      </p>
       <div class="actions">
         <button id="createProgram">Create</button>
       </div>

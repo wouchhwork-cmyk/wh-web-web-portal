@@ -86,7 +86,61 @@
       window.location.href = 'index.html';
       return;
     }
+    /*
+     * A MISSING BUSINESS CURRENCY IS NOT A FORM ERROR, so it does not get a
+     * form error's treatment.
+     *
+     * Nothing on this screen is wrong — the rule is fine, the amount is fine.
+     * What is missing lives on a different page, so saying "invalid" and
+     * leaving them to work it out would be the unhelpful half of being
+     * correct. The message names the remedy and the button performs it.
+     *
+     * Only ever reached for a rule that grants MONEY: a points programme
+     * never needs a currency and is never asked for one.
+     */
+    if (error.code === 'ENTERPRISE_CURRENCY_NOT_SET') {
+      showSettingsPrompt(
+        target,
+        'This rule grants money, and this business has not set a currency yet. ' +
+          'Set one in business settings — or award points instead, which needs no currency.',
+      );
+      return;
+    }
+
+    if (error.code === 'ENTERPRISE_TIMEZONE_NOT_SET') {
+      showSettingsPrompt(
+        target,
+        'This rule counts days — a cap or a time window — and this business has not set a ' +
+          'timezone yet, so there is no day to count against. Set one in business settings.',
+      );
+      return;
+    }
+
     show(target, 'error', error.message, error.code);
+  }
+
+  /** The message plus the way out of it. */
+  function showSettingsPrompt(target, sentence) {
+    target.innerHTML = '';
+    const box = document.createElement('div');
+    box.className = 'message error';
+
+    const text = document.createElement('div');
+    text.textContent = sentence;
+    box.appendChild(text);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const go = document.createElement('button');
+    go.className = 'secondary';
+    go.textContent = 'Open business settings';
+    go.addEventListener('click', () => {
+      window.location.href = 'settings.html';
+    });
+    actions.appendChild(go);
+    box.appendChild(actions);
+
+    target.appendChild(box);
   }
 
   function pill(text, kind) {
@@ -443,12 +497,9 @@
     const button = el('createProgram');
     button.disabled = true;
     try {
-      const currency = el('programCurrency').value.trim().toUpperCase();
-      const body = {
-        name: el('programName').value.trim(),
-        timezone: el('programTimezone').value.trim(),
-        defaultCurrencyCode: currency || null,
-      };
+      /* Name only. Timezone and currency belong to the business now and are
+       * read from its settings, so a programme cannot carry a second opinion. */
+      const body = { name: el('programName').value.trim() };
       await window.api.request('/rewards/programs', { method: 'POST', body: body });
       show(el('createProgramMessage'), 'ok', 'Created. It starts as a draft.');
       el('programName').value = '';
@@ -846,19 +897,27 @@
       return;
     }
     el('createRuleMessage').innerHTML = '';
-    const currency = (selectedProgram && selectedProgram.defaultCurrencyCode) || 'INR';
 
     const benefit = { benefitKind: kind, awardMode: mode, awardCap: null, config: {} };
 
+    /*
+     * NO CURRENCY IS SENT, and that is the change.
+     *
+     * This used to fall back to a hardcoded 'INR' — so a business that had
+     * never said anything about rupees got a rule paying in them, and the
+     * screen looked like it had worked. Omitting it means "the business's
+     * own", which the server resolves; if the business has not set one, it
+     * refuses with ENTERPRISE_CURRENCY_NOT_SET and the handler below says so
+     * and offers to take them there.
+     */
     if (kind === 'grant_points') {
       benefit.config = { points: amount };
     } else if (kind === 'grant_currency') {
-      benefit.config = { minorUnits: amount, currencyCode: currency.toUpperCase() };
+      benefit.config = { minorUnits: amount };
     } else if (kind === 'convert_value') {
       benefit.config = {
         burnPoints: Number(el('benefitBurnPoints').value || 0),
         grantMinor: amount,
-        currencyCode: currency.toUpperCase(),
       };
     } else {
       benefit.config = { itemRef: el('benefitItemRef').value.trim(), validForDays: null };
@@ -988,7 +1047,6 @@
         return;
       }
       wireVisibility();
-      el('programTimezone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       await Promise.all([loadDashboard(), loadPrograms()]);
     } catch (error) {
       handle(error, el('programMessage'));

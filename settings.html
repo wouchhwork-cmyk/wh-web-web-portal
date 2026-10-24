@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Business settings · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:12px">Back</a>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel">
+      <h2>Business settings</h2>
+      <p class="hint">
+        These are set once, here, and everything else reads them. Nothing keeps its own copy &mdash;
+        so changing one here changes it everywhere at once, rather than leaving two parts of the
+        product quietly disagreeing.
+      </p>
+      <p class="hint">
+        Every change is recorded and kept as a version, because a reward granted last month was
+        decided against the settings in force last month.
+      </p>
+
+      <div class="row">
+        <div>
+          <label for="timezone">Timezone</label>
+          <select id="timezone"></select>
+          <span class="field-note">
+            What &ldquo;today&rdquo; and &ldquo;6pm&rdquo; mean for this business. It decides when
+            &ldquo;once a day&rdquo; resets and when a happy hour opens, so a reward rule with a
+            cap or a time window needs it. Pick where the business actually operates &mdash;
+            nothing guesses this for you.
+          </span>
+        </div>
+        <div>
+          <label for="currencyCode">Currency</label>
+          <select id="currencyCode"></select>
+          <span class="field-note">
+            What money means here. Only needed if a reward ever grants money &mdash; a
+            points-only programme never uses it, so leaving it unset is a real answer rather
+            than an unfinished one.
+          </span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="save">Save</button>
+      </div>
+      <div id="settingsMessage"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/settings.js"></script>
+</body>
+</html>

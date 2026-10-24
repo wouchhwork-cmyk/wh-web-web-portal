@@ -93,6 +93,9 @@
       linkCustomers: me.permissions.indexOf('customers.view') !== -1,
       linkRewards: me.permissions.indexOf('rewards.view') !== -1,
       linkTeam: me.permissions.indexOf('employees.view') !== -1,
+      /* VIEW, not manage: somebody who cannot change the settings may still
+       * need to see what they are — and the page disables its own controls. */
+      linkSettings: me.permissions.indexOf('enterprise.view') !== -1,
       linkConnections: me.permissions.indexOf('channels.view') !== -1,
     };
     let shown = 0;
