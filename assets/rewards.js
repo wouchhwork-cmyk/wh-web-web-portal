@@ -1611,9 +1611,36 @@
     }
   }
 
+  /*
+   * THE KEY FOR THE ADJUSTMENT CURRENTLY BEING MADE.
+   *
+   * Held across attempts and cleared on success, which is the whole point: a
+   * send that times out and is pressed again reuses this key, so the server
+   * recognises the retry and the customer is credited ONCE. A genuinely new
+   * adjustment starts with none and gets a fresh one — including the case the
+   * server cares about, the same employee crediting the same customer the
+   * same amount twice on purpose.
+   *
+   * Disabling the button only covers a double-click while the request is in
+   * flight. It does nothing for the case that actually loses money: the
+   * request succeeded, the response never arrived, and somebody pressed again.
+   */
+  let adjustmentKey = null;
+
+  function newIdempotencyKey() {
+    /* `crypto.randomUUID` needs a secure context. The portal is served over
+     * one, but a fallback costs two lines and beats throwing at the moment
+     * somebody is trying to correct a customer's balance. */
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+    return 'adj-' + Date.now() + '-' + Math.random().toString(36).slice(2, 12);
+  }
+
   async function adjust() {
     const button = el('adjust');
     button.disabled = true;
+    if (adjustmentKey === null) adjustmentKey = newIdempotencyKey();
     try {
       const kind = el('adjustWalletKind').value;
       await window.api.request('/rewards/adjustments', {
@@ -1624,8 +1651,12 @@
           currencyCode: kind === 'points' ? null : el('adjustCurrency').value.trim().toUpperCase(),
           amount: Number(el('adjustAmount').value || 0),
           reason: el('adjustReason').value.trim(),
+          idempotencyKey: adjustmentKey,
         },
       });
+      /* Only on success. A failure keeps the key so the retry is recognised
+       * as one rather than credited as a second adjustment. */
+      adjustmentKey = null;
       show(el('adjustMessage'), 'ok', 'Applied, and recorded against you.');
       await loadDashboard();
       el('adjustAmount').value = '';
