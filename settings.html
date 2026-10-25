@@ -50,11 +50,80 @@
         </div>
       </div>
 
-      <div class="actions">
-        <button id="save">Save</button>
-      </div>
-      <div id="settingsMessage"></div>
     </div>
+
+    <div class="panel">
+      <h2>What customers see</h2>
+      <p class="hint">
+        Everything in this panel is written for people outside the business. It is what goes into
+        a message sent on your behalf and anywhere else a customer meets you &mdash; so write it
+        the way you would say it to them, not the way it appears on paperwork.
+      </p>
+
+      <div class="row">
+        <div style="flex:1 1 100%">
+          <label for="displayName">Name customers see</label>
+          <input id="displayName" type="text" maxlength="160" placeholder="McDonald&rsquo;s" />
+          <span class="field-note">
+            Your business is registered as one thing and known as another. This is the known one.
+            Leave it empty and messages fall back to the registered name.
+          </span>
+        </div>
+      </div>
+
+      <div class="row">
+        <div style="flex:1 1 100%">
+          <label for="about">About</label>
+          <textarea id="about" rows="6" maxlength="5000"
+            placeholder="Hey, we&rsquo;re McDonald&rsquo;s &mdash; a chain of fast food restaurants. Our aloo tikki burger and strawberry ice cream are house favourites."></textarea>
+          <span class="field-note">
+            Who you are and what you are known for, in your own words. Up to 5,000 characters
+            &mdash; <span id="aboutCount">0</span> used.
+          </span>
+        </div>
+      </div>
+
+      <div class="row">
+        <div style="flex:1 1 100%">
+          <label>Links</label>
+          <span class="field-note">
+            Anywhere you want customers to go: ordering, directions, your app, whatever is useful.
+            The name is what they read &mdash; so it is a name, not the address again. Pick a
+            suggestion or type your own.
+          </span>
+          <div id="linkRows"></div>
+          <button type="button" id="addLink" class="secondary slot-add" title="Add a link">+</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div style="flex:1 1 100%">
+          <label>Contact</label>
+          <span class="field-note">
+            How a customer reaches a person. Add more than one if you need to &mdash; by region,
+            or orders separately from support. A phone number needs its country code, because the
+            person reading it cannot guess the country.
+          </span>
+          <div id="contactRows"></div>
+          <button type="button" id="addContact" class="secondary slot-add" title="Add a contact">+</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!--
+      ONE SAVE FOR THE WHOLE PAGE, outside both panels so it plainly belongs
+      to neither. The panels split what is read by the product from what is
+      read by a customer, which is a reading aid; the save is one request
+      either way, and two buttons invited the question "which one did I
+      press?" every time.
+    -->
+    <div class="actions page-actions">
+      <button id="save">Save</button>
+    </div>
+    <div id="settingsMessage"></div>
+
+    <datalist id="linkLabelOptions"></datalist>
   </main>
 
   <script src="config.js"></script>

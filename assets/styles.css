@@ -391,3 +391,34 @@ tbody tr:hover { background: #fafbfc; }
 /* A note that is a caveat, not a hint: the external destination records intent
  * and forwards nothing yet, and that has to read differently from help text. */
 .field-note.warn { color: var(--bad); }
+
+/*
+ * A link or contact is a row of fields plus the minus that removes it — the
+ * same shape as a reward row, because they are the same idea: a list the
+ * business grows itself. Boxed so several read as a list rather than as one
+ * long wrap of inputs.
+ */
+.pair-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  border: 1px solid var(--line, #e3e3e3);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+/* The name is narrower than the address: one is two words, the other a URL. */
+.pair-row > .pair-label { flex: 1 1 180px; }
+.pair-row > .pair-value { flex: 3 1 260px; }
+.pair-row > .pair-remove { flex: 0 0 auto; }
+.pair-row input { width: 100%; }
+
+/* Sized to its glyph, like the other row buttons, rather than claiming a field. */
+.pair-remove { padding: 7px 11px; line-height: 1; font-size: 15px; }
+
+/* An empty list should say so, rather than looking like something failed. */
+.pair-empty { margin: 0 0 8px; }
+
+/* The page's own save, which belongs to no single panel. */
+.page-actions { margin-top: 4px; }
