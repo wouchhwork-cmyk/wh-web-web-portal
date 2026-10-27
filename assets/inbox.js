@@ -608,6 +608,22 @@
       return;
     }
 
+    /*
+     * THE SERVER HAS ALREADY LOOKED, AND THERE IS NOTHING THERE.
+     *
+     * Meta serves details for only the 20 most recent messages of a thread,
+     * so once a refresh has failed for an attachment no later one can
+     * succeed. `recoverable: false` is the server saying it has been
+     * established — and it is the only way this client can know, because its
+     * own "already tried" state lives in the tab and dies on reload. Without
+     * this, every reopening of a thread full of long-dead media spent another
+     * request to be told the same permanent thing.
+     */
+    if (attachment.recoverable === false) {
+      slot.replaceChildren(gone(attachment));
+      return;
+    }
+
     slot.replaceChildren(refreshing());
     refreshThreadMedia(refId).then(function (replaced) {
       /* On success the whole thread is being re-read and this slot goes with
