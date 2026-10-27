@@ -567,6 +567,19 @@
         var refreshed = data.refreshed || 0;
         mediaRefresh.state = refreshed > 0 ? 'idle' : 'exhausted';
         mediaRefresh.waiting = null;
+        /*
+         * THE RE-READ HAPPENS HERE, ONCE, and that placement is the whole
+         * point. It used to sit in the caller — so all 36 dead attachments
+         * attached a `.then` to this one shared promise and all 36 called
+         * `openThread` when it resolved. The POST was deduplicated; the
+         * reload it triggers was not. 36 simultaneous thread reads against a
+         * 120-per-minute limit is a self-inflicted RATE_LIMITED, and each
+         * reload re-rendered the same dead images to do it again.
+         *
+         * One refresh, one re-read. The waiting slots are replaced by the
+         * re-render itself, so they need do nothing on success.
+         */
+        if (refreshed > 0 && openRefId === refId) void openThread(refId);
         return refreshed > 0;
       })
       .catch(function () {
@@ -597,13 +610,9 @@
 
     slot.replaceChildren(refreshing());
     refreshThreadMedia(refId).then(function (replaced) {
-      if (!replaced) {
-        slot.replaceChildren(gone(attachment));
-        return;
-      }
-      /* Re-read the thread so EVERY attachment picks up its new link, rather
-       * than this one swapping its src and the other 35 staying dead. */
-      if (openRefId === refId) void openThread(refId);
+      /* On success the whole thread is being re-read and this slot goes with
+       * it, so there is nothing to do here but say when it failed. */
+      if (!replaced) slot.replaceChildren(gone(attachment));
     });
   }
 
