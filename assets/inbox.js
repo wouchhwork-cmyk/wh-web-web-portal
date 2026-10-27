@@ -494,9 +494,125 @@
     video.style.maxWidth = '260px';
     video.style.borderRadius = '8px';
     video.addEventListener('error', function () {
-      slot.replaceChildren(gone(attachment));
+      /* Both renderings have now failed, so the link itself is the problem —
+       * which is the moment to ask for a new one. */
+      onMediaDead(attachment, slot);
     });
     return video;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Replacing dead media links.
+   *
+   * Meta serves message media from links that expire and carry NO expiry in
+   * the URL, so the server cannot predict a dead one — the browser is the
+   * only party that finds out, by trying. The API has an endpoint for exactly
+   * this, and until now nothing called it: a failed image fell through to a
+   * video, the video failed too, and the thread said "no longer available"
+   * without ever asking for a replacement.
+   *
+   * ONE REQUEST PER THREAD, NOT PER ATTACHMENT. A thread can hold dozens of
+   * media; this one holds 36. Asking per broken image would fire 36 calls,
+   * each re-reading the thread from Meta, to do the same work 36 times. The
+   * first failure asks, everything else waits on that same answer.
+   *
+   * AND IT ASKS ONCE. If the refresh comes back with nothing refreshed, the
+   * links are gone for good — Meta only returns the most recent messages of a
+   * thread, so anything older is unrecoverable and asking again will not
+   * change that. `exhausted` is how the thread stops trying.
+   * ------------------------------------------------------------------ */
+  /*
+   * `rounds` is the stop. A successful refresh re-reads the thread, and a
+   * re-read can surface another dead link, which would ask again — and a
+   * fresh link that is itself already dead would turn that into a loop
+   * hammering Meta for as long as the tab is open. Two rounds is enough for
+   * the real case (some links replaced, the rest beyond reach) and cannot
+   * become a cycle.
+   */
+  var MEDIA_REFRESH_ROUNDS = 2;
+  var mediaRefresh = { refId: null, state: 'idle', waiting: null, rounds: 0 };
+
+  function resetMediaRefresh(refId) {
+    mediaRefresh = { refId: refId, state: 'idle', waiting: null, rounds: 0 };
+  }
+
+  /**
+   * Asks the server to replace this thread's expired links, at most once.
+   *
+   * Resolves true when something was replaced and the thread is worth
+   * re-reading, false when there is nothing more to be had.
+   */
+  function refreshThreadMedia(refId) {
+    if (mediaRefresh.refId !== refId) resetMediaRefresh(refId);
+    if (mediaRefresh.state === 'exhausted') return Promise.resolve(false);
+    if (mediaRefresh.waiting) return mediaRefresh.waiting;
+    if (mediaRefresh.rounds >= MEDIA_REFRESH_ROUNDS) {
+      mediaRefresh.state = 'exhausted';
+      return Promise.resolve(false);
+    }
+
+    mediaRefresh.state = 'running';
+    mediaRefresh.rounds += 1;
+    mediaRefresh.waiting = window.api
+      .request('/conversations/' + encodeURIComponent(refId) + '/attachments/refresh', {
+        method: 'POST',
+      })
+      .then(function (result) {
+        var data = (result && result.data) || {};
+        /*
+         * `beyondReach` counts attachments whose message is older than the
+         * window Meta will return. Those are permanently unrecoverable, and
+         * the API documents that a client seeing them should stop asking.
+         */
+        var refreshed = data.refreshed || 0;
+        mediaRefresh.state = refreshed > 0 ? 'idle' : 'exhausted';
+        mediaRefresh.waiting = null;
+        return refreshed > 0;
+      })
+      .catch(function () {
+        /*
+         * A refresh that fails is not worth reporting: the thread already
+         * shows the media is missing, and that is the thing the agent needs
+         * to know. Marked exhausted so one broken call does not become one
+         * per image.
+         */
+        mediaRefresh.state = 'exhausted';
+        mediaRefresh.waiting = null;
+        return false;
+      });
+
+    return mediaRefresh.waiting;
+  }
+
+  /**
+   * What a dead link does now: ask for a replacement, and only give up if
+   * there is none.
+   */
+  function onMediaDead(attachment, slot) {
+    var refId = openRefId;
+    if (!refId || !attachment.expires) {
+      slot.replaceChildren(gone(attachment));
+      return;
+    }
+
+    slot.replaceChildren(refreshing());
+    refreshThreadMedia(refId).then(function (replaced) {
+      if (!replaced) {
+        slot.replaceChildren(gone(attachment));
+        return;
+      }
+      /* Re-read the thread so EVERY attachment picks up its new link, rather
+       * than this one swapping its src and the other 35 staying dead. */
+      if (openRefId === refId) void openThread(refId);
+    });
+  }
+
+  /** Says a replacement is being fetched, so a blank box is not the answer. */
+  function refreshing() {
+    var note = document.createElement('small');
+    note.className = 'hint';
+    note.textContent = 'checking for a fresh link\u2026';
+    return note;
   }
 
   /** What to show once a platform link has genuinely stopped working. */
