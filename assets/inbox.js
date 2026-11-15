@@ -1061,6 +1061,18 @@
      */
     if (message.author) parts.push('@' + message.author);
     if (message.sentBy) parts.push(message.sentBy.name || 'a colleague');
+    /*
+     * SENT BY NOTHING HUMAN, and said plainly rather than left to inference.
+     *
+     * `sentBy` is null for a customer's own message AND for one the assistant
+     * wrote, so its absence cannot distinguish them. An agent scrolling a
+     * thread needs to know which words their business actually chose — most
+     * of all when a customer is quoting one of them back.
+     */
+    if (message.automated) {
+      parts.push('sent automatically by the assistant' +
+        (message.assistantModel ? ' (' + message.assistantModel + ')' : ''));
+    }
     if (message.isInternalNote) parts.push('internal note');
     // Read receipts are about OUR messages: whether the customer has seen it.
     if (message.seenAt) parts.push('seen ' + when(message.seenAt));

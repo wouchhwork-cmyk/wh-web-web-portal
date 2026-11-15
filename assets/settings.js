@@ -318,6 +318,7 @@
 
       el('displayName').value = business.displayName || '';
       el('about').value = business.about || '';
+      el('autoReply').checked = business.autoReply === true;
       el('aboutCount').textContent = String((business.about || '').length);
 
       el('linkRows').innerHTML = '';
@@ -342,6 +343,7 @@
       el('addLink').hidden = !mayManage;
       el('addContact').hidden = !mayManage;
       el('displayName').disabled = !mayManage;
+      el('autoReply').disabled = !mayManage;
       el('about').disabled = !mayManage;
       if (!mayManage) {
         /* The rows are rendered so they can be READ — disabling the inputs is
@@ -397,6 +399,7 @@
           currencyCode: el('currencyCode').value || null,
           displayName: el('displayName').value.trim() || null,
           about: el('about').value.trim() || null,
+          autoReply: el('autoReply').checked,
           links: links,
           contacts: contacts,
         },
