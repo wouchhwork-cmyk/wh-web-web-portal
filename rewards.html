@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reward programs · Wouchh</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <h1>Wouchh</h1>
+    <span class="who">
+      <span id="who"></span>
+      <a href="portal.html" style="margin-left:10px">Back</a>
+    </span>
+  </header>
+
+  <main>
+    <div class="panel">
+      <h2>How the programs are doing</h2>
+      <p class="hint">
+        Value is <em>net of anything taken back</em> &mdash; a clawed-back award stops counting, so
+        this is what the programs have actually cost rather than what they ever granted. Points and
+        each currency are shown separately and never added together.
+      </p>
+      <div id="dashboardMessage"></div>
+      <div id="dashboardRows"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2 id="programsHeading">Reward programs</h2>
+        <div class="panel-actions">
+          <button class="secondary" id="toggleArchived">View archived</button>
+          <button id="newProgram" hidden>New program</button>
+        </div>
+      </div>
+      <p class="hint">
+        A program says when it runs and what it can spend. Its rules say what a customer has to
+        do, and what they get for it. A program is switched on separately from its dates &mdash;
+        one scheduled for next month is active with a start date in the future.
+      </p>
+      <p class="hint">
+        Programs are never deleted. <strong>Archiving</strong> retires one: it stops awarding
+        immediately and is kept as a record of what ran and what it cost. That cannot be undone,
+        so an archived program can never be switched back on.
+      </p>
+      <div id="programMessage"></div>
+      <div id="programRows"></div>
+    </div>
+
+    <div class="panel" id="programViewPanel" hidden>
+      <div class="panel-head">
+        <h2>Settings of <span id="viewProgramName"></span></h2>
+        <div class="panel-actions">
+          <button class="secondary" id="closeView">Close</button>
+        </div>
+      </div>
+      <p class="hint">
+        Everything this program is configured to do, as it stands now. Read only &mdash; use
+        <strong>Update</strong> to change any of it.
+      </p>
+      <div id="viewRows"></div>
+    </div>
+
+    <div class="panel" id="peoplePanel" hidden>
+      <div class="panel-head">
+        <h2>Rewarded by <span id="peopleProgramName"></span></h2>
+        <div class="panel-actions">
+          <button class="secondary" id="closePeople">Close</button>
+        </div>
+      </div>
+      <p class="hint">
+        Everyone this program has rewarded, most recent first &mdash; how many awards it granted
+        them, how many it is still holding, and how many it took back. People it <em>refused</em>
+        are not here: a capped or unqualified attempt is somebody who got nothing.
+        To look one customer up, use the balance search further down.
+      </p>
+      <div id="peopleMessage"></div>
+      <div id="peopleRows"></div>
+      <div class="actions">
+        <button class="secondary" id="morePeople" hidden>Load more</button>
+      </div>
+    </div>
+
+    <div class="panel" id="createProgramPanel" hidden>
+      <h2 id="programFormTitle">New program</h2>
+      <div id="programEditNotice" hidden></div>
+      <p class="hint">
+        One form, one save. The whole programme &mdash; what sets it off, how often it may pay,
+        when it runs and what it gives &mdash; is created together or not at all, so there is no
+        half-built programme sitting there awarding nothing.
+      </p>
+      <p class="hint">It starts as a draft. Nothing it contains awards anything until you switch it on.</p>
+
+      <div class="row">
+        <div>
+          <label for="programName">Internal name</label>
+          <input id="programName" maxlength="120" placeholder="Monsoon loyalty v2" />
+          <span class="field-note">
+            For you to recognise, and <strong>no two programmes here can share one</strong>.
+            Customers never see it, so &ldquo;v2&rdquo; and &ldquo;old one&rdquo; are fine.
+          </span>
+        </div>
+        <div>
+          <label for="programDisplayName">Customer-facing name</label>
+          <input id="programDisplayName" maxlength="160" placeholder="Chai Club" />
+          <span class="field-note">
+            What your customers will be shown. Anything you like, and two programmes may share
+            one. Optional &mdash; nothing displays it yet.
+          </span>
+        </div>
+      </div>
+
+      <h3>What the customer does</h3>
+      <div class="row">
+        <div class="combo" id="triggerCombo">
+          <label for="triggerToggle">Triggers</label>
+          <button
+            type="button"
+            class="combo-toggle"
+            id="triggerToggle"
+            aria-expanded="false"
+            aria-haspopup="listbox"
+          >
+            <span id="triggerSummary" class="placeholder">Choose what sets this off</span>
+            <span class="caret" aria-hidden="true">&#9660;</span>
+          </button>
+          <div class="combo-menu" id="triggerMenu" role="listbox" aria-multiselectable="true" hidden></div>
+          <span class="field-note">
+            Pick as many as you like. Each becomes its own rule behind the scenes, sharing
+            everything you set below.
+          </span>
+        </div>
+      </div>
+      <div class="row" id="thresholdRow" hidden>
+        <div>
+          <label for="ruleMinPointsBalance">Fires once the balance reaches</label>
+          <input id="ruleMinPointsBalance" type="number" min="1" max="10000000" value="100" />
+          <span class="field-note">
+            Points. Checked after any award that adds points, so it fires on the credit that
+            takes them to this number or past it.
+          </span>
+        </div>
+      </div>
+
+      <h3>How often, and how soon</h3>
+      <div class="row">
+        <div>
+          <label for="ruleCapScope">How often it can pay out</label>
+          <select id="ruleCapScope">
+            <option value="none" selected>No cap</option>
+            <option value="day">Once a day</option>
+            <option value="week">Once a week</option>
+            <option value="month">Once a month</option>
+            <option value="year">Once a year</option>
+            <option value="lifetime">Once ever</option>
+          </select>
+          <span class="field-note">
+            Optional, and no cap by default. Per customer, counted in the business&rsquo;s
+            timezone. Without one, somebody can earn as often as they trigger it.
+          </span>
+        </div>
+        <div id="holdRow">
+          <label for="ruleHoldHours">Hold before it counts</label>
+          <input id="ruleHoldHours" type="number" min="0" max="720" value="0" />
+          <span class="field-note">
+            Optional. Hours to wait before the award is really granted, which is also the window
+            a deleted or hidden post is taken back in. 0 grants straight away.
+          </span>
+        </div>
+      </div>
+
+      <h3>When it runs</h3>
+      <p class="hint">
+        All of this is optional. No dates means running now, indefinitely. No days ticked means
+        any day, any hour. A day ticked with no hours means all of that day.
+      </p>
+      <div class="row">
+        <div>
+          <label for="scheduleStartsAt">From</label>
+          <input id="scheduleStartsAt" type="date" />
+          <span class="field-note">Leave empty to start immediately. May be in the future.</span>
+        </div>
+        <div>
+          <label for="scheduleEndsAt">To</label>
+          <input id="scheduleEndsAt" type="date" />
+          <span class="field-note">Leave empty for no end.</span>
+        </div>
+      </div>
+      <div id="scheduleDays"></div>
+
+      <h3>What they get</h3>
+      <p class="hint">
+        A rule can award several things at once &mdash; 20 points <em>and</em> a voucher. They are
+        applied together or not at all, so a customer is never told they earned both and given
+        one. Use <strong>+</strong> to add another, <strong>&minus;</strong> to drop one.
+      </p>
+      <div class="row">
+        <div>
+          <label for="rewardDestination">Where the value goes</label>
+          <select id="rewardDestination">
+            <option value="internal" selected>Keep it in Wouchh</option>
+            <option value="external">Send it to an external system</option>
+          </select>
+          <span class="field-note" id="rewardDestinationNote">
+            One answer for the whole program, not per reward &mdash; a customer&rsquo;s balance
+            living in two places with nothing reconciling them is not a balance.
+          </span>
+        </div>
+      </div>
+      <div id="rewardRows"></div>
+      <div class="actions">
+        <button type="button" class="secondary" id="addReward" title="Add another reward">
+          +
+        </button>
+      </div>
+
+      <div class="actions">
+        <button id="createProgram">Save program</button>
+        <button class="secondary" id="cancelEdit" hidden>Cancel</button>
+      </div>
+      <div id="createProgramMessage"></div>
+    </div>
+
+
+    <div class="panel" id="historyPanel" hidden>
+      <h2>History of <span id="historyProgramName"></span></h2>
+      <p class="hint">
+        Every change keeps the <em>whole</em> configuration as it stood at that moment, not just
+        what moved &mdash; so an award made in March can be explained by reading one row rather
+        than replaying every edit since. Newest first. The forwarding credential is never recorded.
+      </p>
+      <div id="historyMessage"></div>
+      <div id="historyRows"></div>
+    </div>
+
+    <div class="panel">
+      <h2>A customer&rsquo;s balance</h2>
+      <p class="hint">
+        Points and each currency are separate balances and are never added together. Awards that
+        granted nothing are listed too &mdash; that is what answers &ldquo;why didn&rsquo;t I get
+        my points?&rdquo;
+      </p>
+      <div class="row">
+        <div>
+          <label for="customerRefId">Customer reference id</label>
+          <input id="customerRefId" maxlength="40" placeholder="3f2a9c14-&hellip;" />
+          <span class="field-note">
+            The customer&rsquo;s reference id, copied from the customers page.
+          </span>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="secondary" id="lookUp">Look up</button>
+      </div>
+      <div id="balanceMessage"></div>
+      <div id="balanceRows"></div>
+      <div id="awardRows"></div>
+    </div>
+
+    <div class="panel" id="adjustPanel" hidden>
+      <h2>Adjust a balance</h2>
+      <p class="hint">
+        A manual credit or debit for the customer looked up above. It is recorded against you by
+        name, in the audit log and on the ledger entry, and a reason is required.
+      </p>
+      <div class="row">
+        <div>
+          <label for="adjustWalletKind">Which balance</label>
+          <select id="adjustWalletKind">
+            <option value="points">Points</option>
+            <option value="currency">Money</option>
+          </select>
+          <span class="field-note">Points and money are held separately.</span>
+        </div>
+        <div id="adjustCurrencyField" hidden>
+          <label for="adjustCurrency">Currency</label>
+          <input id="adjustCurrency" maxlength="3" placeholder="INR" />
+          <span class="field-note">
+            A real ISO 4217 code &mdash; INR, USD, GBP. Each currency is its own balance, and an
+            invented one is refused rather than opening a wallet in money that does not exist.
+          </span>
+        </div>
+        <div>
+          <label for="adjustAmount">Amount</label>
+          <input id="adjustAmount" type="number" step="1" placeholder="-50" />
+          <span class="field-note">
+            Positive adds, negative takes away. Money is in the chosen currency's
+            <em>minor units</em>, so 500 is 5.00 where a currency has two decimal places and 500
+            whole units where it has none, as JPY does. A debit can take the balance below zero,
+            and that is real debt the next award pays off.
+          </span>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="adjustReason">Reason</label>
+          <input id="adjustReason" maxlength="255" placeholder="Goodwill after a wrong order" />
+          <span class="field-note">
+            Required, and kept. This is what somebody reads months later asking why the balance
+            moved.
+          </span>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="adjust">Apply</button>
+      </div>
+      <div id="adjustMessage"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/rewards.js"></script>
+</body>
+</html>
