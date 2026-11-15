@@ -183,6 +183,20 @@
         </div>
       </div>
 
+      <div class="row">
+        <div style="flex:1 1 100%">
+          <label for="chatFallback">When it cannot answer</label>
+          <input id="chatFallback" type="text" maxlength="500" />
+          <span class="field-note">
+            Sent to the customer when a reply cannot be produced &mdash; the model failed, or the
+            provider has no key here. With automatic replies on, every fast answer has told that
+            customer somebody is there, so saying nothing reads as being ignored. The real reason
+            goes to the audit trail, never to them.
+            <strong>Leave it empty to send nothing at all.</strong>
+          </span>
+        </div>
+      </div>
+
       <div class="actions">
         <button id="chatSave">Save</button>
       </div>
