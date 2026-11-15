@@ -265,6 +265,23 @@
     return box;
   }
 
+  /**
+   * Every attachment leaves through here, whatever it turned out to be.
+   *
+   * THE RENDERER HAS AN EARLY RETURN PER MEDIA TYPE — audio, link, video, and
+   * then image by falling through — and the description was originally
+   * appended in the last of those. So it showed under photos and nowhere
+   * else: videos and voice notes, which are the media an agent can least
+   * afford to open one by one, were silently the ones missing it.
+   *
+   * One exit, so a branch added later cannot quietly lose it again.
+   */
+  function withDescription(wrap, attachment) {
+    var described = describedNode(attachment);
+    if (described) wrap.appendChild(described);
+    return wrap;
+  }
+
   function attachmentNode(attachment, messageKind) {
     var wrap = document.createElement('div');
     wrap.className = 'attachment';
@@ -320,7 +337,7 @@
         : 'the platform sent no content for this — open the chat in ' + platformName() + ' to see it';
       slot.style.fontStyle = 'italic';
       slot.style.opacity = '0.75';
-      return wrap;
+      return withDescription(wrap, attachment);
     }
 
     /*
@@ -346,7 +363,7 @@
       audio.src = attachment.url;
       audio.controls = true;
       slot.appendChild(audio);
-      return wrap;
+      return withDescription(wrap, attachment);
     }
 
     if (renderAs === 'link') {
@@ -448,12 +465,12 @@
       }
 
       slot.appendChild(link);
-      return wrap;
+      return withDescription(wrap, attachment);
     }
 
     if (renderAs === 'video') {
       slot.appendChild(videoNode(attachment, slot));
-      return wrap;
+      return withDescription(wrap, attachment);
     }
 
     // image, gif, sticker — and a story mention, which may be either.
@@ -482,16 +499,7 @@
       slot.replaceChildren(videoNode(attachment, slot));
     });
     slot.appendChild(image);
-
-    /*
-     * Beside a working image too, not only in place of a dead one. An agent
-     * scanning a thread reads the line faster than they open the picture, and
-     * a voice note's transcript is the only way to read one at all.
-     */
-    var described = describedNode(attachment);
-    if (described) wrap.appendChild(described);
-
-    return wrap;
+    return withDescription(wrap, attachment);
   }
 
   function videoNode(attachment, slot) {
@@ -709,14 +717,10 @@
     wrap.appendChild(note);
 
     /*
-     * THE WHOLE REASON THE DESCRIPTION EXISTS. The media is gone and cannot
-     * come back — but if it was described while its link still worked, this
-     * is where that pays off: the agent reads what was sent instead of
-     * reading an apology.
+     * No description is added here. `withDescription` has already put it on
+     * the ATTACHMENT's wrapper, which is this slot's parent — so it survives
+     * the slot being replaced, and adding it again would print it twice.
      */
-    var described = describedNode(attachment);
-    if (described) wrap.appendChild(described);
-
     return wrap;
   }
 
