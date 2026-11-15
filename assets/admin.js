@@ -363,7 +363,134 @@
     window.location.href = 'index.html';
   });
 
+  /* ------------------------------------------------------------------ *
+   * How media is described.
+   *
+   * The instruction and the model behind every description, and the state of
+   * the queue that produces them. Both fields matter for different reasons:
+   * the prompt decides what every description SAYS, the model decides what
+   * every description COSTS.
+   * ------------------------------------------------------------------ */
+  const mediaMessage = document.getElementById('mediaMessage');
+
+  /** The statuses, in the order a reader follows them through the pipeline. */
+  const QUEUE_STATUSES = ['pending', 'in_flight', 'done', 'failed', 'unavailable'];
+
+  function renderMediaTiles(data) {
+    const byStatus = data.queue.byStatus || {};
+    const tiles = [
+      ['Media seen', data.queue.total],
+      ['Described', byStatus.done || 0],
+      ['Waiting', (byStatus.pending || 0) + (byStatus.failed || 0)],
+      ['In flight', byStatus.in_flight || 0],
+      ['Given up', byStatus.unavailable || 0],
+      ['Tokens used', data.spend.totalTokens],
+    ];
+
+    const container = document.getElementById('mediaTiles');
+    container.innerHTML = '';
+    tiles.forEach(function (tile) {
+      const box = document.createElement('div');
+      box.className = 'tile';
+      box.innerHTML = '<div class="n"></div><div class="k"></div>';
+      box.querySelector('.n').textContent = tile[1];
+      box.querySelector('.k').textContent = tile[0];
+      container.appendChild(box);
+    });
+  }
+
+  /** One row per media kind, so a format that always fails is visible as one. */
+  function renderMediaQueue(data) {
+    const body = document.getElementById('mediaQueueRows');
+    body.innerHTML = '';
+
+    const byKind = {};
+    (data.queue.byKind || []).forEach(function (row) {
+      byKind[row.kind] = byKind[row.kind] || {};
+      byKind[row.kind][row.status] = row.count;
+    });
+
+    const kinds = Object.keys(byKind).sort();
+    if (kinds.length === 0) {
+      const empty = document.createElement('tr');
+      empty.innerHTML = '<td colspan="6">No media has been queued yet.</td>';
+      body.appendChild(empty);
+      return;
+    }
+
+    kinds.forEach(function (kind) {
+      const tr = document.createElement('tr');
+      const cells = [kind].concat(
+        QUEUE_STATUSES.map(function (status) {
+          return String(byKind[kind][status] || 0);
+        }),
+      );
+      cells.forEach(function (text) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  function renderMediaAnalysis(data) {
+    document.getElementById('mediaModel').value = data.model || '';
+    document.getElementById('mediaPrompt').value = data.prompt || '';
+    document.getElementById('mediaVersion').value = String(data.promptVersion);
+    renderMediaTiles(data);
+    renderMediaQueue(data);
+
+    /*
+     * An idle queue has two very different explanations, and only one of them
+     * is a problem. Saying which costs a line and saves an investigation.
+     */
+    if (!data.enabled) {
+      show(
+        mediaMessage,
+        'info',
+        'Gemini is switched off in this environment, so nothing is being described. ' +
+          'The queue keeps collecting and will run once it is enabled.',
+      );
+    }
+  }
+
+  async function loadMediaAnalysis() {
+    try {
+      renderMediaAnalysis((await window.api.request('/platform/media-analysis')).data);
+    } catch (error) {
+      handle(error, mediaMessage);
+    }
+  }
+
+  async function saveMediaAnalysis() {
+    const button = document.getElementById('mediaSave');
+    button.disabled = true;
+    try {
+      const result = await window.api.request('/platform/media-analysis', {
+        method: 'PUT',
+        body: {
+          model: document.getElementById('mediaModel').value.trim(),
+          prompt: document.getElementById('mediaPrompt').value.trim(),
+        },
+      });
+      renderMediaAnalysis(result.data);
+      show(
+        mediaMessage,
+        'ok',
+        'Saved. Media described from now on uses this; descriptions already made are untouched.',
+      );
+    } catch (error) {
+      handle(error, mediaMessage);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  document.getElementById('mediaSave').addEventListener('click', saveMediaAnalysis);
+
   loadHeader();
   loadOverview();
   loadList(false);
+  loadMediaAnalysis();
 })();

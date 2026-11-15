@@ -482,6 +482,15 @@
       slot.replaceChildren(videoNode(attachment, slot));
     });
     slot.appendChild(image);
+
+    /*
+     * Beside a working image too, not only in place of a dead one. An agent
+     * scanning a thread reads the line faster than they open the picture, and
+     * a voice note's transcript is the only way to read one at all.
+     */
+    var described = describedNode(attachment);
+    if (described) wrap.appendChild(described);
+
     return wrap;
   }
 
@@ -640,14 +649,75 @@
     return note;
   }
 
+  /**
+   * What this media WAS, in words.
+   *
+   * Shown whether or not the picture still loads, and that is the point of
+   * both placements. Beside a working image it is a caption nobody has to ask
+   * for; in place of a dead one it is the only surviving account of what the
+   * customer sent — Meta expires these links and will not re-issue one past
+   * the newest 20 messages of a thread.
+   *
+   * The API sends this only once the description is finished, so there is no
+   * "analysing…" state to render here: a promise of something that may never
+   * arrive is worse than silence.
+   */
+  function describedNode(attachment) {
+    var analysis = attachment.analysis;
+    if (!analysis || (!analysis.summary && !analysis.transcript)) return null;
+
+    var box = document.createElement('div');
+    box.className = 'media-description';
+
+    var label = document.createElement('small');
+    label.className = 'hint';
+    label.textContent = 'described by AI';
+    box.appendChild(label);
+
+    if (analysis.summary) {
+      var summary = document.createElement('p');
+      summary.className = 'media-summary';
+      summary.textContent = analysis.summary;
+      box.appendChild(summary);
+    }
+
+    /*
+     * The transcript is quoted rather than run together with the summary:
+     * one is our description OF the media, the other is what was actually
+     * said IN it, and an agent acting on the second should be able to see
+     * that it is verbatim.
+     */
+    if (analysis.transcript) {
+      var quote = document.createElement('blockquote');
+      quote.className = 'media-transcript';
+      quote.textContent = analysis.transcript;
+      box.appendChild(quote);
+    }
+
+    return box;
+  }
+
   /** What to show once a platform link has genuinely stopped working. */
   function gone(attachment) {
+    var wrap = document.createElement('div');
+
     var note = document.createElement('small');
     note.className = 'hint';
     note.textContent = attachment.expires
       ? 'this ' + (attachment.mediaKind || 'attachment') + ' is no longer available on the platform'
       : 'this ' + (attachment.mediaKind || 'attachment') + ' could not be loaded';
-    return note;
+    wrap.appendChild(note);
+
+    /*
+     * THE WHOLE REASON THE DESCRIPTION EXISTS. The media is gone and cannot
+     * come back — but if it was described while its link still worked, this
+     * is where that pays off: the agent reads what was sent instead of
+     * reading an apology.
+     */
+    var described = describedNode(attachment);
+    if (described) wrap.appendChild(described);
+
+    return wrap;
   }
 
   /*

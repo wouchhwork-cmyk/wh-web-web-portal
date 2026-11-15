@@ -422,3 +422,29 @@ tbody tr:hover { background: #fafbfc; }
 
 /* The page's own save, which belongs to no single panel. */
 .page-actions { margin-top: 4px; }
+
+/*
+ * What a piece of media was, in words.
+ *
+ * Set apart from the message text: it is OUR description of what a customer
+ * sent, not something they wrote, and an agent must never read it as their
+ * words. The transcript inside it is the exception — that IS what was said —
+ * so it is quoted.
+ */
+.media-description {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--line, #e3e3e3);
+  background: var(--panel-alt, #fafafa);
+  border-radius: 0 6px 6px 0;
+  max-width: 420px;
+}
+.media-summary { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
+.media-transcript {
+  margin: 6px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--line, #e3e3e3);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--muted, #666);
+}
