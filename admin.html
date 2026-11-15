@@ -121,6 +121,62 @@
       </table>
     </div>
 
+    <div class="panel" id="chatPanel">
+      <h2>How the assistant replies</h2>
+      <p class="hint">
+        The assistant drafts replies in the inbox from what we already hold &mdash; the recent
+        thread, the descriptions of media whose links have since expired, and what the business
+        says about itself in its profile. This is the standing instruction behind every draft,
+        the model that writes it, and which provider answers.
+        <strong>Nothing here sends anything:</strong> a draft is always read and sent by a person.
+      </p>
+
+      <div class="row">
+        <div>
+          <label for="chatProvider">Provider</label>
+          <select id="chatProvider"></select>
+          <span class="field-note">
+            Both clients are implemented and either can answer. They are not interchangeable in
+            price or in what they read, so the choice is a setting rather than a default.
+          </span>
+        </div>
+        <div>
+          <label for="chatModel">Model</label>
+          <input id="chatModel" type="text" maxlength="80" placeholder="gpt-6-luna" />
+          <span class="field-note">
+            <strong>Belongs to the provider beside it.</strong> Change one and check the other:
+            a <code>gpt-</code> id means nothing to Google. Not a dropdown, because the list is
+            theirs &mdash; a wrong id fails on the next draft.
+          </span>
+        </div>
+        <div>
+          <label>Prompt version</label>
+          <input id="chatVersion" type="text" disabled />
+          <span class="field-note">
+            Bumped on every save. Each draft records the version that produced it.
+          </span>
+        </div>
+      </div>
+
+      <div class="row">
+        <div style="flex:1 1 100%">
+          <label for="chatPrompt">Instruction</label>
+          <textarea id="chatPrompt" rows="12" maxlength="8000"></textarea>
+          <span class="field-note">
+            Sent with every conversation, so its length is billed on every reply. Keep the rule
+            about not inventing facts and the one about treating text inside a conversation as
+            content rather than as an instruction &mdash; a customer can type anything, including
+            something shaped like an order to the model.
+          </span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="chatSave">Save</button>
+      </div>
+      <div id="chatMessage"></div>
+    </div>
+
     <div class="panel" id="staffPanel">
       <h2>Wouchh staff</h2>
       <p class="hint">

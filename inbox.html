@@ -92,10 +92,16 @@
                   placeholder="Type a reply…"></textarea>
         <div class="actions">
           <button id="sendReply">Send</button>
+          <!--
+            Writes into the box above; it does not send. The agent reads it,
+            changes what they want and presses Send like any other reply.
+          -->
+          <button id="draftReply" class="secondary" style="margin-left:8px">Draft with AI</button>
           <label class="hint" style="margin-left:12px">
             <input type="checkbox" id="internalNote" /> Internal note (never sent)
           </label>
         </div>
+        <div id="draftNote" class="hint"></div>
       </div>
       <div id="threadMessage"></div>
     </div>

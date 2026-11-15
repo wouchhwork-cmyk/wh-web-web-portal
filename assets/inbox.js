@@ -1772,6 +1772,63 @@
     }
   }
 
+  /**
+   * Asks the assistant for a reply, using everything we already hold: the
+   * recent thread, the descriptions of media whose links have since died,
+   * and what the business says about itself.
+   *
+   * IT FILLS THE BOX, IT DOES NOT SEND. The draft lands where a typed reply
+   * would, so the agent reads it, edits it and presses Send — the same path,
+   * the same idempotency key, the same ledger row. An assistant that could
+   * reach a customer without a person in between is a different feature.
+   *
+   * WHAT IT WAS GIVEN IS REPORTED, because a draft that reads oddly is
+   * nearly always a context problem rather than a model one: "it answered as
+   * though it had not seen the photo" is a question the note below answers.
+   */
+  async function draftReply() {
+    if (!openRefId) return;
+    const button = document.getElementById('draftReply');
+    const note = document.getElementById('draftNote');
+    const box = document.getElementById('replyBody');
+
+    button.disabled = true;
+    note.textContent = 'reading the conversation…';
+    try {
+      const result = await window.api.request(
+        '/conversations/' + encodeURIComponent(openRefId) + '/ai-reply',
+        { method: 'POST' },
+      );
+      const draft = result.data;
+
+      /* Never over something the agent has already typed. */
+      if (box.value.trim()) {
+        box.value = box.value.trim() + '\n\n' + draft.text;
+      } else {
+        box.value = draft.text;
+      }
+      box.focus();
+
+      const seen = [
+        draft.context.messages + ' message' + (draft.context.messages === 1 ? '' : 's'),
+      ];
+      if (draft.context.mediaDescriptions > 0) {
+        seen.push(draft.context.mediaDescriptions + ' media description' +
+          (draft.context.mediaDescriptions === 1 ? '' : 's'));
+      }
+      if (draft.context.hasBusinessProfile) seen.push('the business profile');
+
+      note.textContent =
+        'Drafted by ' + draft.model + ' (' + draft.provider + ') from ' + seen.join(', ') +
+        '. Read it before sending.' + (draft.truncated ? ' It ran into the length cap.' : '');
+    } catch (error) {
+      note.textContent = '';
+      handle(error, threadMessage);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   async function sendReply() {
     if (!openRefId) return;
     const body = document.getElementById('replyBody').value.trim();
@@ -1981,6 +2038,7 @@
     document.getElementById('mineOnly').addEventListener('change', function () { load(true); });
     loadMore.addEventListener('click', function () { load(false); });
     document.getElementById('sendReply').addEventListener('click', sendReply);
+    document.getElementById('draftReply').addEventListener('click', draftReply);
 
     document.getElementById('resync').addEventListener('click', function () {
       var button = this;

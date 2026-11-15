@@ -489,8 +489,86 @@
 
   document.getElementById('mediaSave').addEventListener('click', saveMediaAnalysis);
 
+  /* ------------------------------------------------------------------ *
+   * How the assistant replies.
+   *
+   * Three fields, and the first two are a pair: a model id belongs to the
+   * provider that serves it, so changing provider without changing model is
+   * a save that looks fine here and fails on the next draft.
+   * ------------------------------------------------------------------ */
+  const chatMessage = document.getElementById('chatMessage');
+
+  /** Every provider the API knows, labelled with whether it can run here. */
+  function renderProviders(data) {
+    const select = document.getElementById('chatProvider');
+    const available = data.availableProviders || [];
+    const known = [['openai', 'OpenAI'], ['gemini', 'Gemini']];
+
+    select.innerHTML = '';
+    known.forEach(function (entry) {
+      const option = document.createElement('option');
+      option.value = entry[0];
+      option.textContent =
+        available.indexOf(entry[0]) === -1 ? entry[1] + ' (no key in this environment)' : entry[1];
+      select.appendChild(option);
+    });
+    select.value = data.provider;
+  }
+
+  function renderChatSettings(data) {
+    renderProviders(data);
+    document.getElementById('chatModel').value = data.model || '';
+    document.getElementById('chatPrompt').value = data.prompt || '';
+    document.getElementById('chatVersion').value = String(data.promptVersion);
+
+    /*
+     * A silent assistant has two very different explanations and only one is
+     * a problem. Saying which costs a line and saves an investigation.
+     */
+    if (!data.enabled) {
+      show(
+        chatMessage,
+        'info',
+        'The chosen provider has no key in this environment, so no draft will be written. ' +
+          'The setting is saved either way.',
+      );
+    }
+  }
+
+  async function loadChatSettings() {
+    try {
+      renderChatSettings((await window.api.request('/platform/chat')).data);
+    } catch (error) {
+      handle(error, chatMessage);
+    }
+  }
+
+  async function saveChatSettings() {
+    const button = document.getElementById('chatSave');
+    button.disabled = true;
+    try {
+      const result = await window.api.request('/platform/chat', {
+        method: 'PUT',
+        body: {
+          provider: document.getElementById('chatProvider').value,
+          model: document.getElementById('chatModel').value.trim(),
+          prompt: document.getElementById('chatPrompt').value.trim(),
+        },
+      });
+      renderChatSettings(result.data);
+      show(chatMessage, 'ok', 'Saved. Drafts written from now on use this.');
+    } catch (error) {
+      handle(error, chatMessage);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  document.getElementById('chatSave').addEventListener('click', saveChatSettings);
+
   loadHeader();
   loadOverview();
   loadList(false);
   loadMediaAnalysis();
+  loadChatSettings();
 })();
