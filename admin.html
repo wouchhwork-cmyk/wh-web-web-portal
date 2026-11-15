@@ -197,6 +197,19 @@
         </div>
       </div>
 
+      <div class="row">
+        <div style="flex:1 1 100%">
+          <label for="chatHold">While it looks at a photo</label>
+          <input id="chatHold" type="text" maxlength="500" />
+          <span class="field-note">
+            Media is described a few seconds after it arrives, so a photo sent with no text
+            reaches the assistant before there is anything to answer about. This holds the
+            moment; the real answer follows as soon as the description lands.
+            <strong>Leave it empty to wait silently and answer once.</strong>
+          </span>
+        </div>
+      </div>
+
       <div class="actions">
         <button id="chatSave">Save</button>
       </div>

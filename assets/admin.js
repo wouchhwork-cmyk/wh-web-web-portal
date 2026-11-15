@@ -520,6 +520,7 @@
     document.getElementById('chatAutoReply').checked = data.autoReply === true;
     document.getElementById('chatModel').value = data.model || '';
     document.getElementById('chatFallback').value = data.fallbackMessage || '';
+    document.getElementById('chatHold').value = data.mediaHoldMessage || '';
     document.getElementById('chatPrompt').value = data.prompt || '';
     document.getElementById('chatVersion').value = String(data.promptVersion);
 
@@ -555,6 +556,7 @@
           provider: document.getElementById('chatProvider').value,
           autoReply: document.getElementById('chatAutoReply').checked,
           fallbackMessage: document.getElementById('chatFallback').value.trim(),
+          mediaHoldMessage: document.getElementById('chatHold').value.trim(),
           model: document.getElementById('chatModel').value.trim(),
           prompt: document.getElementById('chatPrompt').value.trim(),
         },
