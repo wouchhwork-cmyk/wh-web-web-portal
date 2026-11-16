@@ -1073,6 +1073,15 @@
       parts.push('sent automatically by the assistant' +
         (message.assistantModel ? ' (' + message.assistantModel + ')' : ''));
     }
+    /*
+     * IT ASKED FOR A PERSON, and that is the one thing about an automatic
+     * reply somebody has to ACT on. The message beside this has just told a
+     * customer a colleague will come back to them — a promise this business
+     * has now made, kept by a human who has to know it was made.
+     */
+    if (message.handoff) {
+      parts.push('needs a person: ' + message.handoff);
+    }
     if (message.isInternalNote) parts.push('internal note');
     // Read receipts are about OUR messages: whether the customer has seen it.
     if (message.seenAt) parts.push('seen ' + when(message.seenAt));
@@ -1829,10 +1838,23 @@
           (draft.context.mediaDescriptions === 1 ? '' : 's'));
       }
       if (draft.context.hasBusinessProfile) seen.push('the business profile');
+      if (draft.context.hasPerson) seen.push('who you are talking to');
+      if (draft.context.hasPost) seen.push('the post this is under');
+
+      /*
+       * WHAT IT COULD NOT DO, said before anything else. An agent who sends
+       * this draft without reading that line has sent a customer a promise
+       * that somebody will follow up — and they are that somebody.
+       */
+      const trouble = [];
+      if (draft.handoff) trouble.push('It wants a person on this: ' + draft.handoff + '.');
+      if (draft.silent) trouble.push('It judged that nothing needs saying here.');
+      if (draft.truncated) trouble.push('It ran into the length cap.');
 
       note.textContent =
+        (trouble.length ? trouble.join(' ') + ' ' : '') +
         'Drafted by ' + draft.model + ' (' + draft.provider + ') from ' + seen.join(', ') +
-        '. Read it before sending.' + (draft.truncated ? ' It ran into the length cap.' : '');
+        '. Read it before sending.';
     } catch (error) {
       note.textContent = '';
       handle(error, threadMessage);

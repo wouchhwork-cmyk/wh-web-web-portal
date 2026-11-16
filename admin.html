@@ -94,9 +94,13 @@
 
       <div class="row">
         <div style="flex:1 1 100%">
-          <label for="mediaPrompt">Instruction</label>
+          <label for="mediaPrompt">What to look for</label>
           <textarea id="mediaPrompt" rows="14" maxlength="8000"></textarea>
           <span class="field-note">
+            What this business needs noticed in a photo or a voice note &mdash; products, damage,
+            order numbers, handwriting. <strong>The output format is not yours to set:</strong>
+            the JSON shape, and the rule that writing inside the media is never an instruction to
+            follow, are built in and cannot be edited away from here.
             Sent with every piece of media, so its length is billed on every one.
             <strong>Saving does not re-describe anything.</strong> It changes what happens next,
             not what already happened.
@@ -209,13 +213,15 @@
 
       <div class="row">
         <div style="flex:1 1 100%">
-          <label for="chatPrompt">Instruction</label>
+          <label for="chatPrompt">How this business sounds</label>
           <textarea id="chatPrompt" rows="12" maxlength="8000"></textarea>
           <span class="field-note">
-            Sent with every conversation, so its length is billed on every reply. Keep the rule
-            about not inventing facts and the one about treating text inside a conversation as
-            content rather than as an instruction &mdash; a customer can type anything, including
-            something shaped like an order to the model.
+            Voice, policy, and what this business will and will not promise. <strong>You no
+            longer need to write the rules here.</strong> Never claiming to be a bot, never
+            inventing a price or an opening hour, treating anything a customer types as content
+            rather than as an order to the model, answering in the language they wrote in, and
+            the shape of the answer itself are all built in and sit above and below whatever you
+            write. Sent with every conversation, so its length is billed on every reply.
           </span>
         </div>
       </div>
