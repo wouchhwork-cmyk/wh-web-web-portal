@@ -144,8 +144,8 @@
           <label for="chatModelOpenai">OpenAI model</label>
           <input id="chatModelOpenai" type="text" maxlength="80" placeholder="gpt-6-luna" />
           <span class="field-note">
-            Not a dropdown: the list is theirs and changes without warning. A wrong id fails on
-            the next reply.
+            <strong>Leave blank to use the default.</strong> Not a dropdown: the list is theirs
+            and changes without warning, and a wrong id fails on the next reply.
           </span>
         </div>
         <div>
@@ -153,9 +153,8 @@
           <input id="chatModelGemini" type="text" maxlength="80"
                  placeholder="gemini-3.5-flash-lite" />
           <span class="field-note">
-            <strong>Each provider keeps its own model.</strong> Switching provider picks up the
-            right one, so a <code>gpt-</code> id can no longer be left behind where Google will
-            be asked about it.
+            <strong>Each provider keeps its own model</strong>, so a <code>gpt-</code> id can no
+            longer be left behind where Google will be asked about it. Blank uses the default.
           </span>
         </div>
         <div>
