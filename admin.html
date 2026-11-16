@@ -141,12 +141,21 @@
           </span>
         </div>
         <div>
-          <label for="chatModel">Model</label>
-          <input id="chatModel" type="text" maxlength="80" placeholder="gpt-6-luna" />
+          <label for="chatModelOpenai">OpenAI model</label>
+          <input id="chatModelOpenai" type="text" maxlength="80" placeholder="gpt-6-luna" />
           <span class="field-note">
-            <strong>Belongs to the provider beside it.</strong> Change one and check the other:
-            a <code>gpt-</code> id means nothing to Google. Not a dropdown, because the list is
-            theirs &mdash; a wrong id fails on the next draft.
+            Not a dropdown: the list is theirs and changes without warning. A wrong id fails on
+            the next reply.
+          </span>
+        </div>
+        <div>
+          <label for="chatModelGemini">Gemini model</label>
+          <input id="chatModelGemini" type="text" maxlength="80"
+                 placeholder="gemini-3.5-flash-lite" />
+          <span class="field-note">
+            <strong>Each provider keeps its own model.</strong> Switching provider picks up the
+            right one, so a <code>gpt-</code> id can no longer be left behind where Google will
+            be asked about it.
           </span>
         </div>
         <div>
@@ -169,6 +178,35 @@
           </span>
         </div>
       </div>
+
+      <div class="row">
+        <div>
+          <label for="chatKeyOpenai">OpenAI API key</label>
+          <input id="chatKeyOpenai" type="password" maxlength="200" autocomplete="off"
+                 placeholder="leave blank to keep the current key" />
+          <span class="field-note" id="chatKeyOpenaiNote"></span>
+          <label class="hint" style="display:flex;align-items:center;gap:6px;margin-top:4px">
+            <input type="checkbox" id="chatKeyOpenaiClear" /> Remove the stored key
+          </label>
+        </div>
+        <div>
+          <label for="chatKeyGemini">Gemini API key</label>
+          <input id="chatKeyGemini" type="password" maxlength="200" autocomplete="off"
+                 placeholder="leave blank to keep the current key" />
+          <span class="field-note" id="chatKeyGeminiNote"></span>
+          <label class="hint" style="display:flex;align-items:center;gap:6px;margin-top:4px">
+            <input type="checkbox" id="chatKeyGeminiClear" /> Remove the stored key
+          </label>
+        </div>
+      </div>
+
+      <p class="hint">
+        Keys are stored encrypted and <strong>never sent back to this page</strong> &mdash; which
+        is why the boxes are always empty and why there is a tick-box to remove one. A key saved
+        here is used instead of the environment's; remove it and the environment answers again.
+        The chat key is separate from the one that describes media, so the assistant can run on a
+        different account entirely.
+      </p>
 
       <div class="row">
         <div style="flex:1 1 100%">

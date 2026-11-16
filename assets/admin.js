@@ -515,10 +515,36 @@
     select.value = data.provider;
   }
 
+  /**
+   * Where each key comes from, since the key itself never arrives here.
+   *
+   * The last four characters of a console-held key are enough to answer "is
+   * the one I pasted still in there?" without the page ever holding a
+   * credential that a screenshot could leak.
+   */
+  function renderKeyNotes(data) {
+    const keys = data.keys || {};
+    [['openai', 'OpenAI'], ['gemini', 'Gemini']].forEach(function (entry) {
+      const note = document.getElementById(
+        'chatKey' + entry[0].charAt(0).toUpperCase() + entry[0].slice(1) + 'Note',
+      );
+      const state = keys[entry[0]] || { source: 'none', hint: null };
+      if (state.source === 'console') {
+        note.textContent = 'A key is stored here, ending ' + (state.hint || '????') + '.';
+      } else if (state.source === 'environment') {
+        note.textContent = 'Using the key from this environment. Paste one here to override it.';
+      } else {
+        note.textContent = 'No key anywhere — ' + entry[1] + ' cannot answer.';
+      }
+    });
+  }
+
   function renderChatSettings(data) {
     renderProviders(data);
     document.getElementById('chatAutoReply').checked = data.autoReply === true;
-    document.getElementById('chatModel').value = data.model || '';
+    document.getElementById('chatModelOpenai').value = (data.models && data.models.openai) || '';
+    document.getElementById('chatModelGemini').value = (data.models && data.models.gemini) || '';
+    renderKeyNotes(data);
     document.getElementById('chatFallback').value = data.fallbackMessage || '';
     document.getElementById('chatHold').value = data.mediaHoldMessage || '';
     document.getElementById('chatPrompt').value = data.prompt || '';
@@ -554,6 +580,17 @@
         method: 'PUT',
         body: {
           provider: document.getElementById('chatProvider').value,
+          models: {
+            openai: document.getElementById('chatModelOpenai').value.trim(),
+            gemini: document.getElementById('chatModelGemini').value.trim(),
+          },
+          /*
+           * Only when there is something to say. A blank box means "leave the
+           * stored key alone" — the page cannot put one back, so sending a
+           * blank would wipe a working key on every save of the prompt. The
+           * tick-box is the only way to remove one, and sends null.
+           */
+          apiKeys: collectKeys(),
           autoReply: document.getElementById('chatAutoReply').checked,
           fallbackMessage: document.getElementById('chatFallback').value.trim(),
           mediaHoldMessage: document.getElementById('chatHold').value.trim(),
@@ -562,12 +599,28 @@
         },
       });
       renderChatSettings(result.data);
-      show(chatMessage, 'ok', 'Saved. Drafts written from now on use this.');
+      ['Openai', 'Gemini'].forEach(function (name) {
+        document.getElementById('chatKey' + name).value = '';
+        document.getElementById('chatKey' + name + 'Clear').checked = false;
+      });
+      show(chatMessage, 'ok', 'Saved. Replies written from now on use this.');
     } catch (error) {
       handle(error, chatMessage);
     } finally {
       button.disabled = false;
     }
+  }
+
+  /** Absent, null or a new key — the three states the API keeps apart. */
+  function collectKeys() {
+    const keys = {};
+    [['openai', 'Openai'], ['gemini', 'Gemini']].forEach(function (entry) {
+      const typed = document.getElementById('chatKey' + entry[1]).value.trim();
+      const clear = document.getElementById('chatKey' + entry[1] + 'Clear').checked;
+      if (clear) keys[entry[0]] = null;
+      else if (typed) keys[entry[0]] = typed;
+    });
+    return keys;
   }
 
   document.getElementById('chatSave').addEventListener('click', saveChatSettings);
