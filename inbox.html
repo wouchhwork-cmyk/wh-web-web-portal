@@ -105,6 +105,36 @@
       </div>
       <div id="threadMessage"></div>
     </div>
+
+    <!--
+      WHAT WE ASKED A MODEL, AND WHAT WE ASKED IT WITH.
+
+      The prompt itself is never stored: it carries the customer's own
+      words, their name and the transcript of anything they recorded, and
+      keeping it would make a second copy of every conversation. It is
+      rebuilt here on demand from the code, the saved instruction, the rows
+      it was assembled from and the ids of the messages it was shown — then
+      read and thrown away.
+    -->
+    <div class="panel" id="aiCallsPanel">
+      <h2>What the assistant was asked</h2>
+      <p class="hint">
+        Every call this business has made to a model &mdash; replies sent automatically, drafts
+        somebody asked for, and media descriptions. <strong>No prompt is stored.</strong> Opening
+        one rebuilds it and checks it against a fingerprint taken at the time, so it will tell you
+        whether what you are reading is exactly what ran.
+      </p>
+      <div class="actions">
+        <button id="loadAiCalls" class="secondary">Load recent calls</button>
+        <span id="aiCallsNote" class="hint"></span>
+      </div>
+      <div id="aiCallsList"></div>
+      <div id="aiPromptView" hidden>
+        <h3 id="aiPromptTitle"></h3>
+        <div id="aiPromptDrift" class="hint"></div>
+        <pre id="aiPromptBody" style="white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto;border:1px solid #ddd;padding:12px;border-radius:6px"></pre>
+      </div>
+    </div>
   </main>
 
   <script src="config.js"></script>

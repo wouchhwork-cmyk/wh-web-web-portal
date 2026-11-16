@@ -1863,6 +1863,122 @@
     }
   }
 
+  /**
+   * What this business has asked a model, newest first.
+   *
+   * Metadata only — what it cost, how long it took, whether it failed. The
+   * prompt is not in this list because it is not in the database: it is
+   * rebuilt one at a time, on request, by `showPrompt` below.
+   */
+  async function loadAiCalls() {
+    const button = document.getElementById('loadAiCalls');
+    const note = document.getElementById('aiCallsNote');
+    const list = document.getElementById('aiCallsList');
+
+    button.disabled = true;
+    note.textContent = 'reading the trail…';
+    try {
+      const result = await window.api.request('/ai-calls?limit=25', { method: 'GET' });
+      const calls = result.data.calls || [];
+      list.innerHTML = '';
+
+      if (!calls.length) {
+        note.textContent = 'Nothing yet. A call appears here the moment the assistant makes one.';
+        return;
+      }
+
+      calls.forEach(function (call) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.cssText = 'display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid #eee';
+
+        const summary = document.createElement('span');
+        summary.style.flex = '1 1 auto';
+        const bits = [PURPOSES[call.purpose] || call.purpose, call.model];
+        if (call.status !== 'ok') bits.push(call.status + (call.failureCode ? ' (' + call.failureCode + ')' : ''));
+        if (call.totalTokens) bits.push(call.totalTokens + ' tokens');
+        if (call.durationMs) bits.push(call.durationMs + 'ms');
+        if (call.messages) bits.push(call.messages + ' message' + (call.messages === 1 ? '' : 's'));
+        bits.push(when(call.createdAt));
+        summary.textContent = bits.filter(Boolean).join(' · ');
+        row.appendChild(summary);
+
+        const open = document.createElement('button');
+        open.className = 'secondary';
+        open.textContent = 'Show the prompt';
+        /*
+         * A call made before prompts were fingerprinted cannot be checked,
+         * so it is not offered: showing a reconstruction nobody can verify
+         * is worse than showing nothing.
+         */
+        open.disabled = !call.replayable;
+        open.title = call.replayable ? '' : 'Made before prompts were fingerprinted';
+        open.addEventListener('click', function () { showPrompt(call); });
+        row.appendChild(open);
+
+        list.appendChild(row);
+      });
+      note.textContent = calls.length + ' call' + (calls.length === 1 ? '' : 's');
+    } catch (error) {
+      note.textContent = '';
+      handle(error, document.getElementById('aiCallsNote'));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  const PURPOSES = {
+    auto_reply: 'replied automatically',
+    draft: 'drafted for a colleague',
+    media_description: 'described media',
+  };
+
+  /**
+   * Rebuilds one prompt and shows it.
+   *
+   * NOTHING IS STORED AND NOTHING IS KEPT HERE EITHER: it is fetched, read
+   * and replaced the next time somebody opens another. The line above it is
+   * the load-bearing part — whether what is on screen is byte-for-byte what
+   * was sent, or a reconstruction that has drifted since.
+   */
+  async function showPrompt(call) {
+    const view = document.getElementById('aiPromptView');
+    const title = document.getElementById('aiPromptTitle');
+    const drift = document.getElementById('aiPromptDrift');
+    const body = document.getElementById('aiPromptBody');
+
+    view.hidden = false;
+    title.textContent = 'Rebuilding…';
+    drift.textContent = '';
+    body.textContent = '';
+
+    try {
+      const result = await window.api.request(
+        '/ai-calls/' + encodeURIComponent(call.refId) + '/prompt',
+        { method: 'GET' },
+      );
+      const replayed = result.data;
+
+      title.textContent =
+        (PURPOSES[replayed.call.purpose] || replayed.call.purpose) +
+        ' · ' + replayed.call.model +
+        ' · ' + when(replayed.call.createdAt);
+
+      if (replayed.matchesOriginal) {
+        drift.textContent = 'This is exactly what was sent.';
+        drift.style.color = '';
+      } else {
+        drift.style.color = '#a15c00';
+        drift.textContent = replayed.drift.join(' ');
+      }
+      body.textContent = replayed.prompt;
+      view.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (error) {
+      title.textContent = '';
+      handle(error, document.getElementById('aiCallsNote'));
+    }
+  }
+
   async function sendReply() {
     if (!openRefId) return;
     const body = document.getElementById('replyBody').value.trim();
@@ -2073,6 +2189,7 @@
     loadMore.addEventListener('click', function () { load(false); });
     document.getElementById('sendReply').addEventListener('click', sendReply);
     document.getElementById('draftReply').addEventListener('click', draftReply);
+    document.getElementById('loadAiCalls').addEventListener('click', loadAiCalls);
 
     document.getElementById('resync').addEventListener('click', function () {
       var button = this;
