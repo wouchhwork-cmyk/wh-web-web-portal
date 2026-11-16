@@ -594,7 +594,6 @@
           autoReply: document.getElementById('chatAutoReply').checked,
           fallbackMessage: document.getElementById('chatFallback').value.trim(),
           mediaHoldMessage: document.getElementById('chatHold').value.trim(),
-          model: document.getElementById('chatModel').value.trim(),
           prompt: document.getElementById('chatPrompt').value.trim(),
         },
       });
