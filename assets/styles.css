@@ -448,3 +448,230 @@ tbody tr:hover { background: #fafbfc; }
   font-style: italic;
   color: var(--muted, #666);
 }
+
+/* --- what the assistant was asked ------------------------------------- */
+
+/*
+ * Numbers read right-aligned or they do not read at all: 2171 above 412
+ * above 88 is a column you can scan, and the same three ragged-left is a
+ * list you have to parse one row at a time.
+ */
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* The rows somebody is actually looking for. A failure that renders in the
+   same ink as a success is a failure nobody finds. */
+.outcome-bad { color: var(--warn); font-weight: 600; }
+
+/*
+ * A second line under a message, for what the ASSISTANT did rather than what
+ * was said. These used to be appended to the same middot run as the
+ * direction, the author and the timestamp, and five facts in one sentence
+ * read as none.
+ */
+.assistant-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.assistant-note .pill { margin-right: 6px; }
+
+/* A button that is really a link: used inline in prose, where a button
+   shaped like a button would read as an action on the whole message. */
+.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.prompt-view pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 12px;
+  background: #fbfbfc;
+}
+.prompt-exact { color: var(--ok); }
+.prompt-drifted { color: var(--warn); }
+
+/* --- the inbox: two panes, not a stack ------------------------------- */
+
+/*
+ * THE PAGE WAS A COLUMN OF PANELS. Filters, then the conversation list,
+ * then the thread, then the composer — so opening a conversation pushed the
+ * list off the top of the screen and answering meant scrolling back up to
+ * find out who you were answering. An inbox is two things side by side: the
+ * list you pick from and the thread you are in.
+ */
+.inbox-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+/*
+ * EACH PANE SCROLLS ITSELF. One scrollbar for the whole page means the list
+ * and the thread cannot be read at the same time, which is the one thing
+ * this layout is for. `sticky` keeps the aside in view while a long thread
+ * moves underneath it.
+ */
+.inbox-aside {
+  position: sticky;
+  top: 18px;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+}
+.inbox-aside .panel { margin-bottom: 12px; }
+
+.inbox-thread { min-width: 0; }
+
+/*
+ * BELOW 1000px THERE IS NO SECOND COLUMN TO HAVE. Two panes on a phone are
+ * two unusably narrow panes, so it goes back to a stack — and the aside
+ * stops being sticky, because a sticky element taller than the viewport
+ * traps the scroll.
+ */
+@media (max-width: 1000px) {
+  .inbox-grid { grid-template-columns: 1fr; }
+  .inbox-aside { position: static; max-height: none; overflow: visible; }
+}
+
+/* --- a conversation in the list -------------------------------------- */
+
+.conv {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 2px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.conv:last-child { border-bottom: 0; }
+.conv:hover { background: var(--bg); }
+
+/* The one you are reading. Without it, a list you have scrolled is a list
+   you have lost your place in. */
+.conv.is-open { background: #eef3fb; }
+.conv.is-open .conv-name { color: var(--accent); }
+
+.conv-face {
+  width: 34px; height: 34px; border-radius: 50%;
+  flex: 0 0 34px; object-fit: cover; background: var(--bg);
+}
+.conv-body { min-width: 0; flex: 1 1 auto; }
+.conv-name {
+  display: block; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conv-snippet {
+  display: block; color: var(--muted); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conv-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.conv-side { flex: 0 0 auto; text-align: right; }
+.conv-when { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* --- a message in the thread ----------------------------------------- */
+
+/*
+ * THEIRS AND OURS, TOLD APART BY SHAPE. Every message rendered identically,
+ * so a thread read as one voice and you had to read the direction word to
+ * know who said what.
+ */
+/*
+ * THE THREAD SCROLLS, NOT THE PAGE. With the composer below it, a thread
+ * that grew the page meant the reply box walked off the bottom of the screen
+ * on any long conversation — you scrolled to read, then scrolled back to
+ * answer.
+ */
+#messages {
+  max-height: calc(100vh - 340px);
+  min-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+@media (max-width: 1000px) {
+  #messages { max-height: none; overflow: visible; }
+}
+
+.msg { display: flex; margin: 10px 0; }
+.msg-bubble {
+  max-width: min(680px, 82%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: var(--panel);
+}
+.msg.outbound { justify-content: flex-end; }
+.msg.outbound .msg-bubble { background: #eef3fb; border-color: #d6e2f5; }
+.msg.internal .msg-bubble { background: #fdf7e6; border-color: #f0e3bd; }
+.msg-text { white-space: pre-wrap; word-break: break-word; }
+
+/* The controls for one message, kept quiet until they are wanted. */
+.msg-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.msg-actions .pill { margin: 0; }
+
+/* A folded diagnostic should look like one, not like a heading competing
+   with the conversation above it. */
+details.panel > summary {
+  cursor: pointer;
+  list-style: none;
+}
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::before { content: '\25B8  '; color: var(--muted); }
+details.panel[open] > summary::before { content: '\25BE  '; }
+
+/* --- the prompt, over the conversation it belongs to ------------------ */
+
+.prompt-dialog {
+  width: min(900px, 92vw);
+  max-height: 86vh;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0;
+  background: var(--panel);
+  color: var(--ink);
+  overflow: hidden;
+}
+.prompt-dialog::backdrop { background: rgba(17, 24, 39, 0.45); }
+
+/*
+ * The head stays put while the prompt scrolls under it. A prompt runs to
+ * thousands of characters, and a title that scrolls away takes with it the
+ * one line that says whether what you are reading is what actually ran.
+ */
+.prompt-dialog-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.prompt-dialog-head h3 { margin: 0 0 2px; font-size: 15px; }
+.prompt-dialog-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
+.prompt-dialog .prompt-view { padding: 0 18px 18px; }
+.prompt-dialog .prompt-view pre { max-height: 64vh; margin-top: 14px; }

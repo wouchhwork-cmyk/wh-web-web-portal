@@ -90,83 +90,109 @@
   }
 
   function rowFor(conversation) {
-    const row = document.createElement('div');
-    row.className = 'row';
+    /*
+     * THE WHOLE ROW IS THE TARGET. It used to be a block of text with an
+     * "Open" button at the end, so picking a conversation meant aiming at a
+     * button instead of clicking the thing you were looking at. A button
+     * element rather than a div, so it keeps the keyboard and the focus ring
+     * a list of choices needs.
+     */
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'conv';
+    if (conversation.refId === openRefId) row.classList.add('is-open');
+    row.addEventListener('click', function () {
+      openThread(conversation.refId);
+    });
 
-    const left = document.createElement('div');
-    const title = document.createElement('strong');
+    const customer = conversation.customer;
+
+    /*
+     * The picture. Meta's link EXPIRES after a few days, so a failure to
+     * load is expected: the image removes itself and the name carries the
+     * row, rather than leaving a broken-image icon on every older thread.
+     */
+    if (customer && customer.avatarUrl) {
+      const face = document.createElement('img');
+      face.className = 'conv-face';
+      face.src = customer.avatarUrl;
+      face.alt = '';
+      face.loading = 'lazy';
+      face.addEventListener('error', function () {
+        face.remove();
+      });
+      row.appendChild(face);
+    }
+
+    const body = document.createElement('span');
+    body.className = 'conv-body';
+
     /*
      * The PERSON leads, not the kind. A name is not always known — a direct
      * message carries only a platform id until the thread's participants are
      * read — so the kind is the fallback rather than the headline.
      */
-    const customer = conversation.customer;
-    title.textContent =
+    const name = document.createElement('span');
+    name.className = 'conv-name';
+    name.textContent =
       (customer && customer.displayName) ||
       (customer ? 'Unnamed customer' : conversation.conversationKind.replace(/_/g, ' '));
+    body.appendChild(name);
 
     /*
-     * The picture, which the API has returned all along and nothing ever drew.
-     * The link is Meta's and EXPIRES after a few days, so a failure to load is
-     * expected: the image removes itself and the name carries the row, rather
-     * than leaving a broken-image icon next to every older conversation.
+     * WHAT IT IS ABOUT, on its own line and clipped to one. A subject is the
+     * customer's own first words on a comment or a mention, which is the
+     * single most useful thing for choosing what to pick up next.
      */
-    if (customer && customer.avatarUrl) {
-      var face = document.createElement('img');
-      face.src = customer.avatarUrl;
-      face.alt = '';
-      face.loading = 'lazy';
-      face.width = 28;
-      face.height = 28;
-      face.style.borderRadius = '50%';
-      face.style.verticalAlign = 'middle';
-      face.style.marginRight = '8px';
-      face.addEventListener('error', function () { face.remove(); });
-      title.prepend(face);
+    if (conversation.subject) {
+      const snippet = document.createElement('span');
+      snippet.className = 'conv-snippet';
+      snippet.textContent = conversation.subject;
+      body.appendChild(snippet);
     }
 
-    // Triage at a glance: someone who follows you is not a cold contact.
-    if (customer && customer.followsUs) title.appendChild(pill('follows you', 'active'));
-    if (customer && customer.isVerified) title.appendChild(pill('verified', 'none'));
-
-    left.appendChild(title);
-    left.appendChild(document.createElement('br'));
-    const meta = document.createElement('small');
-    meta.className = 'hint';
+    const meta = document.createElement('span');
+    meta.className = 'conv-meta';
     meta.textContent =
       conversation.conversationKind.replace(/_/g, ' ') +
-      ' · ' + conversation.messageCount +
-      ' message' + (conversation.messageCount === 1 ? '' : 's') +
-      ' · last ' + when(conversation.lastMessageAt);
-    left.appendChild(meta);
-    row.appendChild(left);
+      ' · ' +
+      conversation.messageCount +
+      ' message' +
+      (conversation.messageCount === 1 ? '' : 's');
+    body.appendChild(meta);
 
-    const right = document.createElement('div');
-    right.appendChild(pill(conversation.status, conversation.status));
+    /* Triage at a glance: somebody who follows you is not a cold contact. */
+    const flags = document.createElement('span');
+    flags.className = 'conv-meta';
+    if (customer && customer.followsUs) flags.appendChild(pill('follows you', 'active'));
+    if (customer && customer.isVerified) flags.appendChild(pill('verified', 'none'));
     if (conversation.unreadCount > 0) {
-      right.appendChild(pill(conversation.unreadCount + ' unread', 'pending'));
+      flags.appendChild(pill(conversation.unreadCount + ' unread', 'pending'));
     }
     // Visible in the list, so an agent picking work knows before opening it.
-    if (conversation.canReply === false) {
-      right.appendChild(pill('reply closed', 'suspended'));
-    }
+    if (conversation.canReply === false) flags.appendChild(pill('reply closed', 'suspended'));
     /*
      * WHO HAS IT. The whole point of a shared inbox: without this, two agents
      * pick up the same conversation and the customer gets two answers.
      */
     if (conversation.assignedTo) {
       const mine = conversation.assignedTo.refId === myEmployeeRefId;
-      right.appendChild(
+      flags.appendChild(
         pill(mine ? 'you' : conversation.assignedTo.name || 'assigned', mine ? 'active' : 'none'),
       );
     }
-    const open = document.createElement('button');
-    open.className = 'secondary';
-    open.style.marginLeft = '8px';
-    open.textContent = 'Open';
-    open.addEventListener('click', function () { openThread(conversation.refId); });
-    right.appendChild(open);
-    row.appendChild(right);
+    if (flags.childNodes.length > 0) body.appendChild(flags);
+
+    row.appendChild(body);
+
+    const side = document.createElement('span');
+    side.className = 'conv-side';
+    const stamp = document.createElement('span');
+    stamp.className = 'conv-when';
+    stamp.textContent = when(conversation.lastMessageAt);
+    side.appendChild(stamp);
+    side.appendChild(pill(conversation.status, conversation.status));
+    row.appendChild(side);
 
     return row;
   }
@@ -811,10 +837,20 @@
   }
 
   function messageRow(message) {
+    /*
+     * THEIRS AND OURS, TOLD APART BY SHAPE. Every message rendered
+     * identically before this, so a thread read as a single voice and the
+     * only way to know who said what was to read the direction word in the
+     * meta line. An internal note gets its own colour for the same reason,
+     * and a stronger one: it is the message that must never be mistaken for
+     * something the customer can see.
+     */
     const row = document.createElement('div');
-    row.className = 'row';
+    row.className = 'msg ' + (message.direction === 'outbound' ? 'outbound' : 'inbound');
+    if (message.isInternalNote) row.classList.add('internal');
 
     const left = document.createElement('div');
+    left.className = 'msg-bubble';
 
     /*
      * WHAT THIS ANSWERS, above the message itself — the way every messaging app
@@ -1069,19 +1105,8 @@
      * thread needs to know which words their business actually chose — most
      * of all when a customer is quoting one of them back.
      */
-    if (message.automated) {
-      parts.push('sent automatically by the assistant' +
-        (message.assistantModel ? ' (' + message.assistantModel + ')' : ''));
-    }
-    /*
-     * IT ASKED FOR A PERSON, and that is the one thing about an automatic
-     * reply somebody has to ACT on. The message beside this has just told a
-     * customer a colleague will come back to them — a promise this business
-     * has now made, kept by a human who has to know it was made.
-     */
-    if (message.handoff) {
-      parts.push('needs a person: ' + message.handoff);
-    }
+
+
     if (message.isInternalNote) parts.push('internal note');
     // Read receipts are about OUR messages: whether the customer has seen it.
     if (message.seenAt) parts.push('seen ' + when(message.seenAt));
@@ -1089,11 +1114,68 @@
     meta.textContent = parts.filter(Boolean).join(' · ');
     left.appendChild(meta);
 
+    /*
+     * WHAT THE ASSISTANT DID, on a line of its own.
+     *
+     * All of this used to be appended to the middot run above — direction,
+     * author, model, handoff, timestamp, one sentence — and five facts in
+     * one sentence read as none. It is also the line somebody acts on: a
+     * handoff is a promise this business has just made, kept by a human who
+     * has to know it was made.
+     */
+    if (message.automated) {
+      const note = document.createElement('small');
+      note.className = 'assistant-note';
+
+      if (message.handoff) {
+        const flag = document.createElement('span');
+        flag.className = 'pill expiring_soon';
+        flag.textContent = 'needs a person';
+        note.appendChild(flag);
+      }
+
+      note.appendChild(
+        document.createTextNode(
+          'Sent automatically' +
+            (message.assistantModel ? ' by ' + message.assistantModel : '') +
+            (message.handoff ? ' — ' + message.handoff : ''),
+        ),
+      );
+
+      /*
+       * THE QUESTION IS ASKED AT THE MESSAGE, so the answer is offered
+       * here. It was only reachable from a list further down the page,
+       * which meant finding the call that wrote THIS reply before you could
+       * read what it was shown. The prompt is still not stored anywhere —
+       * this rebuilds it.
+       */
+      if (message.promptRef) {
+        const why = document.createElement('button');
+        why.type = 'button';
+        why.className = 'linklike';
+        why.style.marginLeft = '6px';
+        why.textContent = 'why did it say this?';
+        why.addEventListener('click', function () {
+          showPrompt({ refId: message.promptRef });
+        });
+        note.appendChild(why);
+      }
+
+      left.appendChild(note);
+    }
+
     const messageDetails = detailsPanel('everything Meta sent about this message', message.platformDetails);
     if (messageDetails) left.appendChild(messageDetails);
     row.appendChild(left);
 
+    /*
+     * INSIDE THE BUBBLE, not beside it. The status and the controls belong
+     * to this message, and in a two-sided thread "beside" means left of our
+     * own messages and right of theirs — the actions would drift to a
+     * different edge depending on who was speaking.
+     */
     const right = document.createElement('div');
+    right.className = 'msg-actions';
     if (message.status) right.appendChild(pill(message.status, message.status));
 
     /*
@@ -1175,7 +1257,7 @@
       right.appendChild(reply);
     }
 
-    row.appendChild(right);
+    if (right.childNodes.length > 0) left.appendChild(right);
     return row;
   }
 
@@ -1656,7 +1738,36 @@
           textContent: 'No messages in this thread.',
         }));
       }
-      list.forEach(function (message) { messages.appendChild(messageRow(message)); });
+      /*
+       * OLDEST AT THE TOP, NEWEST AT THE BOTTOM — the way every messaging
+       * app draws a conversation, and the way the people in it remember it.
+       * The API answers newest-first because that is what pagination needs;
+       * reading is the other direction.
+       */
+      const ordered = list.slice().reverse();
+
+      if (older) {
+        /*
+         * An older page belongs ABOVE what is already on screen, as one
+         * block, in the same order. Appending it would put the oldest
+         * messages after the newest and shuffle the conversation.
+         *
+         * The scroll is held still across the insert: content added above
+         * the viewport otherwise shoves everything down and the reader loses
+         * the line they were on, which is the whole reason they pressed the
+         * button.
+         */
+        const was = messages.scrollHeight;
+        const frame = document.createDocumentFragment();
+        ordered.forEach(function (message) { frame.appendChild(messageRow(message)); });
+        messages.insertBefore(frame, messages.firstChild);
+        messages.scrollTop += messages.scrollHeight - was;
+      } else {
+        ordered.forEach(function (message) { messages.appendChild(messageRow(message)); });
+        /* Open on the newest, which is what somebody opening a conversation
+         * came to read. */
+        messages.scrollTop = messages.scrollHeight;
+      }
 
       threadCursor = pagination.nextCursor || null;
       document.getElementById('loadOlder').hidden = !pagination.hasMore;
@@ -1887,22 +1998,60 @@
         return;
       }
 
+      /*
+       * A TABLE, because this is tabular — and the house one, not a bespoke
+       * copy. The first version was a column of flex rows separated by
+       * middots with its own inline styling, which both ran together and
+       * disagreed with every other table in the portal.
+       */
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      [
+        ['When', ''],
+        ['What for', ''],
+        ['Model', ''],
+        ['Outcome', ''],
+        ['Tokens', 'num'],
+        ['Took', 'num'],
+        ['Shown', 'num'],
+        ['', ''],
+      ].forEach(function (column) {
+        const th = document.createElement('th');
+        th.textContent = column[0];
+        if (column[1]) th.className = column[1];
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
       calls.forEach(function (call) {
-        const row = document.createElement('div');
-        row.className = 'row';
-        row.style.cssText = 'display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid #eee';
+        const row = document.createElement('tr');
 
-        const summary = document.createElement('span');
-        summary.style.flex = '1 1 auto';
-        const bits = [PURPOSES[call.purpose] || call.purpose, call.model];
-        if (call.status !== 'ok') bits.push(call.status + (call.failureCode ? ' (' + call.failureCode + ')' : ''));
-        if (call.totalTokens) bits.push(call.totalTokens + ' tokens');
-        if (call.durationMs) bits.push(call.durationMs + 'ms');
-        if (call.messages) bits.push(call.messages + ' message' + (call.messages === 1 ? '' : 's'));
-        bits.push(when(call.createdAt));
-        summary.textContent = bits.filter(Boolean).join(' · ');
-        row.appendChild(summary);
+        const cell = function (text, className) {
+          const td = document.createElement('td');
+          td.textContent = text;
+          if (className) td.className = className;
+          row.appendChild(td);
+          return td;
+        };
 
+        cell(when(call.createdAt));
+        cell(PURPOSES[call.purpose] || call.purpose);
+        cell(call.model);
+
+        /* A failure that renders in the same ink as a success is a failure
+         * nobody finds, and these are the rows people come here for. */
+        const outcome = cell(OUTCOMES[call.status] || call.failureCode || call.status);
+        if (call.status !== 'ok') outcome.className = 'outcome-bad';
+
+        cell(call.totalTokens ? String(call.totalTokens) : '—', 'num');
+        cell(call.durationMs ? call.durationMs + ' ms' : '—', 'num');
+        cell(call.messages ? String(call.messages) : call.mediaKey ? 'media' : '—', 'num');
+
+        const action = document.createElement('td');
+        action.className = 'num';
         const open = document.createElement('button');
         open.className = 'secondary';
         open.textContent = 'Show the prompt';
@@ -1913,11 +2062,17 @@
          */
         open.disabled = !call.replayable;
         open.title = call.replayable ? '' : 'Made before prompts were fingerprinted';
-        open.addEventListener('click', function () { showPrompt(call); });
-        row.appendChild(open);
+        open.addEventListener('click', function () {
+          showPrompt(call);
+        });
+        action.appendChild(open);
+        row.appendChild(action);
 
-        list.appendChild(row);
+        tbody.appendChild(row);
       });
+      table.appendChild(tbody);
+      list.appendChild(table);
+
       note.textContent = calls.length + ' call' + (calls.length === 1 ? '' : 's');
     } catch (error) {
       note.textContent = '';
@@ -1926,6 +2081,14 @@
       button.disabled = false;
     }
   }
+
+  /* Each status in the words somebody reading a trail would use. */
+  const OUTCOMES = {
+    ok: 'answered',
+    in_flight: 'in flight',
+    unknown: 'never came back',
+    failed: 'failed',
+  };
 
   const PURPOSES = {
     auto_reply: 'replied automatically',
@@ -1941,16 +2104,27 @@
    * the load-bearing part — whether what is on screen is byte-for-byte what
    * was sent, or a reconstruction that has drifted since.
    */
+  /**
+   * Rebuilds one prompt and shows it over the conversation.
+   *
+   * NOTHING IS STORED AND NOTHING IS KEPT HERE EITHER: it is fetched, read
+   * and replaced the next time somebody opens another. The line under the
+   * title is the load-bearing part — whether what is on screen is
+   * byte-for-byte what was sent, or a reconstruction that has drifted since.
+   */
   async function showPrompt(call) {
-    const view = document.getElementById('aiPromptView');
+    const dialog = document.getElementById('promptDialog');
     const title = document.getElementById('aiPromptTitle');
     const drift = document.getElementById('aiPromptDrift');
     const body = document.getElementById('aiPromptBody');
 
-    view.hidden = false;
     title.textContent = 'Rebuilding…';
     drift.textContent = '';
+    drift.className = 'hint';
     body.textContent = '';
+    /* Opened before the fetch, so the click has a visible effect rather than
+     * appearing to do nothing for as long as the rebuild takes. */
+    if (!dialog.open) dialog.showModal();
 
     try {
       const result = await window.api.request(
@@ -1964,18 +2138,16 @@
         ' · ' + replayed.call.model +
         ' · ' + when(replayed.call.createdAt);
 
-      if (replayed.matchesOriginal) {
-        drift.textContent = 'This is exactly what was sent.';
-        drift.style.color = '';
-      } else {
-        drift.style.color = '#a15c00';
-        drift.textContent = replayed.drift.join(' ');
-      }
+      drift.className = 'hint ' + (replayed.matchesOriginal ? 'prompt-exact' : 'prompt-drifted');
+      drift.textContent = replayed.matchesOriginal
+        ? 'This is exactly what was sent.'
+        : replayed.drift.join(' ');
       body.textContent = replayed.prompt;
-      view.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (error) {
-      title.textContent = '';
-      handle(error, document.getElementById('aiCallsNote'));
+      title.textContent = 'Could not rebuild this prompt';
+      drift.className = 'hint prompt-drifted';
+      drift.textContent =
+        (error && error.message) || 'The call could not be read back.';
     }
   }
 
@@ -2190,6 +2362,38 @@
     document.getElementById('sendReply').addEventListener('click', sendReply);
     document.getElementById('draftReply').addEventListener('click', draftReply);
     document.getElementById('loadAiCalls').addEventListener('click', loadAiCalls);
+
+    /*
+     * A prompt runs to thousands of characters and the reason to open one is
+     * usually to compare it with something else. Selecting it by hand out of
+     * a scrolling box is the kind of small friction that stops people
+     * checking at all.
+     */
+    document.getElementById('aiPromptCopy').addEventListener('click', function () {
+      const text = document.getElementById('aiPromptBody').textContent || '';
+      const button = this;
+      void navigator.clipboard.writeText(text).then(
+        function () {
+          button.textContent = 'Copied';
+          setTimeout(function () { button.textContent = 'Copy'; }, 1500);
+        },
+        function () {
+          /* Clipboard access can be refused outright. Saying so beats a
+           * button that silently did nothing. */
+          button.textContent = 'Press ⌘C';
+          setTimeout(function () { button.textContent = 'Copy'; }, 2000);
+        },
+      );
+    });
+
+    /*
+     * Clicking the backdrop closes it, which is what everybody expects of a
+     * dialog and what `dialog` itself does not do. The target IS the dialog
+     * only when the click landed outside its content box.
+     */
+    document.getElementById('promptDialog').addEventListener('click', function (event) {
+      if (event.target === this) this.close();
+    });
 
     document.getElementById('resync').addEventListener('click', function () {
       var button = this;
