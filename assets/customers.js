@@ -22,6 +22,35 @@
     target.appendChild(box);
   }
 
+  /**
+   * Sets, or clears, the name this business gives somebody.
+   *
+   * An empty answer is sent as null rather than skipped: "" and "leave it
+   * alone" are different instructions, and only the first hands the customer
+   * back to the platform. Cancelling sends nothing at all.
+   */
+  async function renameCustomer(customer) {
+    const current = customer.displayName || '';
+    const next = window.prompt(
+      'What should this business call them?\n\n' +
+        'Leave it empty to go back to the name ' +
+        (customer.handle ? 'the platform gives them (@' + customer.handle + ')' : 'the platform gives them') +
+        '.',
+      current,
+    );
+    if (next === null) return;
+
+    try {
+      await window.api.request('/customers/' + encodeURIComponent(customer.refId), {
+        method: 'PATCH',
+        body: { displayName: next.trim() === '' ? null : next.trim() },
+      });
+      load(true);
+    } catch (error) {
+      handle(error, listMessage);
+    }
+  }
+
   function handle(error, target) {
     if (error.status === 401) {
       window.api.clearSession();
@@ -92,6 +121,25 @@
     row.appendChild(left);
 
     const right = document.createElement('div');
+
+    /*
+     * THE NAME THIS BUSINESS GIVES THEM, which outranks the platform's.
+     *
+     * A customer's name resolves ours first and the platform's second, and
+     * until this button existed nothing could write ours — so the fallback
+     * was the whole of the answer. Clearing the box hands them back to
+     * whatever Instagram calls them, which is what somebody who typed a name
+     * by mistake actually wants.
+     */
+    const rename = document.createElement('button');
+    rename.className = 'secondary';
+    rename.textContent = 'Rename';
+    rename.style.marginRight = '8px';
+    rename.addEventListener('click', function () {
+      renameCustomer(customer);
+    });
+    right.appendChild(rename);
+
     right.appendChild(
       pill(
         customer.conversationCount + ' conversation' + (customer.conversationCount === 1 ? '' : 's'),
