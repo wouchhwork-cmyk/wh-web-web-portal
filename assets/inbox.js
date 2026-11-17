@@ -719,7 +719,8 @@
    */
   function describedNode(attachment) {
     var analysis = attachment.analysis;
-    if (!analysis || (!analysis.summary && !analysis.transcript)) return null;
+    if (!analysis) return null;
+    if (!analysis.summary && !analysis.transcript && !analysis.visibleText) return null;
 
     var box = document.createElement('div');
     box.className = 'media-description';
@@ -737,19 +738,39 @@
     }
 
     /*
-     * The transcript is quoted rather than run together with the summary:
-     * one is our description OF the media, the other is what was actually
-     * said IN it, and an agent acting on the second should be able to see
-     * that it is verbatim.
+     * HEARD, READ AND SEEN — QUOTED SEPARATELY, and labelled.
+     *
+     * These are quoted rather than run together with the summary because one
+     * is our description OF the media and the others are what was actually
+     * in it; an agent acting on them should be able to see they are verbatim.
+     *
+     * They are LABELLED because the API stopped conflating them and this
+     * panel had not caught up. `transcript` used to mean "everything said or
+     * written"; it means sound alone now, so an image's on-screen text —
+     * prices, a receipt total, the date on an invitation — rendered nowhere
+     * at all, and the description looked like it had got worse when it had
+     * in fact got more precise.
      */
-    if (analysis.transcript) {
-      var quote = document.createElement('blockquote');
-      quote.className = 'media-transcript';
-      quote.textContent = analysis.transcript;
-      box.appendChild(quote);
-    }
+    quoted(box, 'heard', analysis.transcript);
+    quoted(box, 'read', analysis.visibleText);
+    quoted(box, 'scene by scene', analysis.scenes);
 
     return box;
+  }
+
+  /** One verbatim block of a description, under what kind of thing it is. */
+  function quoted(box, label, text) {
+    if (!text) return;
+
+    var head = document.createElement('small');
+    head.className = 'hint media-part';
+    head.textContent = label;
+    box.appendChild(head);
+
+    var quote = document.createElement('blockquote');
+    quote.className = 'media-transcript';
+    quote.textContent = text;
+    box.appendChild(quote);
   }
 
   /** What to show once a platform link has genuinely stopped working. */

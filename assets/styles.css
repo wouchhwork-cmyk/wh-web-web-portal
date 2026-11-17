@@ -441,12 +441,26 @@ tbody tr:hover { background: #fafbfc; }
 }
 .media-summary { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
 .media-transcript {
-  margin: 6px 0 0;
+  margin: 2px 0 0;
   padding-left: 8px;
   border-left: 2px solid var(--line, #e3e3e3);
   font-size: 13px;
   font-style: italic;
   color: var(--muted, #666);
+  /* On-screen text and a shot list carry their own line breaks, and a
+     receipt run onto one line is a receipt nobody can read. */
+  white-space: pre-wrap;
+}
+
+/* Which of the three this block is: heard, read, or scene by scene. A
+   quotation with no label leaves a reader guessing whether a date was
+   spoken aloud or printed on the thing they were sent. */
+.media-part {
+  display: block;
+  margin-top: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
 }
 
 /* --- what the assistant was asked ------------------------------------- */
