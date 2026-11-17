@@ -499,6 +499,19 @@ tbody tr:hover { background: #fafbfc; }
   font-size: 12px;
   background: #fbfbfc;
 }
+/*
+ * PROSE, NOT A PAYLOAD. One dialog shows two different things: a prompt,
+ * which is structured XML and only reads correctly in a monospace column,
+ * and the assistant's notes, which are sentences about a customer. A
+ * paragraph set in 12px monospace reads as a log line nobody is meant to
+ * look at, which is the opposite of what these are for.
+ */
+.prompt-view pre.as-prose {
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  background: var(--panel);
+}
 .prompt-exact { color: var(--ok); }
 .prompt-drifted { color: var(--warn); }
 
@@ -675,3 +688,9 @@ details.panel[open] > summary::before { content: '\25BE  '; }
 
 .prompt-dialog .prompt-view { padding: 0 18px 18px; }
 .prompt-dialog .prompt-view pre { max-height: 64vh; margin-top: 14px; }
+
+/* Live or polling, at a glance. Green is not decoration here: it is the
+   difference between "quiet" and "broken", which otherwise look identical. */
+.live-live::before { content: '● '; color: var(--ok); }
+.live-connecting::before { content: '● '; color: var(--muted); }
+.live-polling::before { content: '● '; color: var(--warn); }

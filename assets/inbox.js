@@ -9,6 +9,15 @@
   if (!window.api.requireSession()) return;
 
   const rows = document.getElementById('rows');
+
+  /*
+   * The element that actually scrolls the list. The rows live inside a
+   * panel inside the aside, and it is the aside that has the overflow — so
+   * reading `rows.scrollTop` would read zero for ever and restore nothing.
+   */
+  function asidePane() {
+    return document.querySelector('.inbox-aside') || document.documentElement;
+  }
   const listMessage = document.getElementById('listMessage');
   const threadPanel = document.getElementById('threadPanel');
   const threadTitle = document.getElementById('threadTitle');
@@ -198,6 +207,15 @@
   }
 
   async function load(reset) {
+    /*
+     * THE LIST REDRAWS ON A TIMER and on every change a colleague makes, so
+     * resetting it throws away where somebody had scrolled to — every thirty
+     * seconds, while they are reading it. The aside scrolls itself now,
+     * which makes that far more noticeable than it was when the whole page
+     * moved as one.
+     */
+    const listScroll = reset ? asidePane().scrollTop : 0;
+
     if (reset) {
       rows.innerHTML = '';
       cursor = null;
@@ -228,6 +246,9 @@
       }
 
       items.forEach(function (conversation) { rows.appendChild(rowFor(conversation)); });
+
+      /* Back where they were, now that there is something to scroll. */
+      if (reset) asidePane().scrollTop = listScroll;
 
       cursor = pagination.nextCursor || null;
       loadMore.hidden = !pagination.hasMore;
@@ -1122,10 +1143,23 @@
      * one sentence read as none. It is also the line somebody acts on: a
      * handoff is a promise this business has just made, kept by a human who
      * has to know it was made.
+     *
+     * Built lazily and appended once at the end, because more than one thing
+     * writes to it: an automatic reply explains itself, and any message of
+     * ours can offer the notes behind it. Two <small> rows stacked under one
+     * bubble read as two separate remarks about it.
      */
+    let note = null;
+    function assistantLine() {
+      if (!note) {
+        note = document.createElement('small');
+        note.className = 'assistant-note';
+      }
+      return note;
+    }
+
     if (message.automated) {
-      const note = document.createElement('small');
-      note.className = 'assistant-note';
+      assistantLine();
 
       if (message.handoff) {
         const flag = document.createElement('span');
@@ -1160,9 +1194,35 @@
         });
         note.appendChild(why);
       }
-
-      left.appendChild(note);
     }
+
+    /*
+     * WHAT IT KNEW BY HERE.
+     *
+     * On every message of OURS, not only the automatic ones. The assistant
+     * keeps running notes on a conversation and rewrites them each time it
+     * answers; a colleague replying from the Instagram app writes messages
+     * those notes have not read yet. Both questions are asked at the same
+     * place — "what had it understood when this went out?" — and the second
+     * is the one that shows the notes trailing behind.
+     *
+     * Fetched on click, never with the thread: these are a paragraph each
+     * and a reader opens one at a time.
+     */
+    if (message.hasNotes) {
+      const line = assistantLine();
+      const summary = document.createElement('button');
+      summary.type = 'button';
+      summary.className = 'linklike';
+      if (line.childNodes.length) summary.style.marginLeft = '6px';
+      summary.textContent = 'summary so far';
+      summary.addEventListener('click', function () {
+        showNotes(message.refId);
+      });
+      line.appendChild(summary);
+    }
+
+    if (note) left.appendChild(note);
 
     const messageDetails = detailsPanel('everything Meta sent about this message', message.platformDetails);
     if (messageDetails) left.appendChild(messageDetails);
@@ -1716,6 +1776,17 @@
         conversation.canModerateComments === true &&
         permissions.indexOf('conversations.manage') !== -1;
 
+      /*
+       * Taken before anything is cleared: a thread already at its newest
+       * should stay there as messages arrive, and one scrolled back should
+       * stay where it was. The tolerance absorbs sub-pixel scroll heights,
+       * which never settle exactly on the bottom.
+       */
+      const atBottom =
+        older ||
+        messages.scrollHeight === 0 ||
+        messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
+
       if (!older) messages.innerHTML = '';
       /*
        * BEFORE ANYTHING IS DRAWN, because the rendering reads it.
@@ -1763,10 +1834,18 @@
         messages.insertBefore(frame, messages.firstChild);
         messages.scrollTop += messages.scrollHeight - was;
       } else {
+        /*
+         * STICK TO THE BOTTOM ONLY IF THEY WERE ALREADY THERE.
+         *
+         * A live update redraws the whole thread, and it fires on anything
+         * that touches the conversation — a new message, a colleague
+         * assigning it, a status change. Scrolling to the newest every time
+         * yanks somebody who is scrolled up reading history back down to
+         * the bottom, repeatedly, while a colleague works. Measured BEFORE
+         * the redraw, because afterwards the old position is gone.
+         */
         ordered.forEach(function (message) { messages.appendChild(messageRow(message)); });
-        /* Open on the newest, which is what somebody opening a conversation
-         * came to read. */
-        messages.scrollTop = messages.scrollHeight;
+        if (atBottom) messages.scrollTop = messages.scrollHeight;
       }
 
       threadCursor = pagination.nextCursor || null;
@@ -2097,13 +2176,31 @@
   };
 
   /**
-   * Rebuilds one prompt and shows it.
+   * ONE DIALOG, two questions asked at the same message: what the assistant
+   * was shown, and what it had understood by then. Both are a title, a line
+   * of provenance and a block of text, and a second dialog would duplicate
+   * the markup, the backdrop handler and the copy button to say so.
    *
-   * NOTHING IS STORED AND NOTHING IS KEPT HERE EITHER: it is fetched, read
-   * and replaced the next time somebody opens another. The line above it is
-   * the load-bearing part — whether what is on screen is byte-for-byte what
-   * was sent, or a reconstruction that has drifted since.
+   * Opens before the fetch so a click has a visible effect rather than
+   * appearing to do nothing for as long as the read takes.
    */
+  function openTextDialog(title, prose) {
+    const dialog = document.getElementById('promptDialog');
+    const parts = {
+      title: document.getElementById('aiPromptTitle'),
+      hint: document.getElementById('aiPromptDrift'),
+      body: document.getElementById('aiPromptBody'),
+    };
+    parts.title.textContent = title;
+    parts.hint.textContent = '';
+    parts.hint.className = 'hint';
+    parts.body.textContent = '';
+    /* Sentences and a prompt are not read the same way — see .as-prose. */
+    parts.body.className = prose ? 'as-prose' : '';
+    if (!dialog.open) dialog.showModal();
+    return parts;
+  }
+
   /**
    * Rebuilds one prompt and shows it over the conversation.
    *
@@ -2113,18 +2210,10 @@
    * byte-for-byte what was sent, or a reconstruction that has drifted since.
    */
   async function showPrompt(call) {
-    const dialog = document.getElementById('promptDialog');
-    const title = document.getElementById('aiPromptTitle');
-    const drift = document.getElementById('aiPromptDrift');
-    const body = document.getElementById('aiPromptBody');
-
-    title.textContent = 'Rebuilding…';
-    drift.textContent = '';
-    drift.className = 'hint';
-    body.textContent = '';
-    /* Opened before the fetch, so the click has a visible effect rather than
-     * appearing to do nothing for as long as the rebuild takes. */
-    if (!dialog.open) dialog.showModal();
+    const parts = openTextDialog('Rebuilding…');
+    const title = parts.title;
+    const drift = parts.hint;
+    const body = parts.body;
 
     try {
       const result = await window.api.request(
@@ -2148,6 +2237,47 @@
       drift.className = 'hint prompt-drifted';
       drift.textContent =
         (error && error.message) || 'The call could not be read back.';
+    }
+  }
+
+  /**
+   * The assistant's running notes as they stood at one of our messages.
+   *
+   * WHY THIS IS NOT THE SAME AS THE PROMPT. The prompt is what the model was
+   * handed; these are what it concluded and carried forward — rewritten
+   * every time it answers, and the only account of a conversation older than
+   * the window it reads. Asked at a message because the useful question is
+   * "what had it understood when this went out?", not "what does it think
+   * now".
+   *
+   * A message the business typed into Instagram has no notes of its own and
+   * is shown the last ones written, said out loud: a summary that has not
+   * read the message you are looking at is worth knowing about.
+   */
+  async function showNotes(messageRefId) {
+    if (!openRefId) return;
+    const parts = openTextDialog('Reading the notes…', true);
+
+    try {
+      const result = await window.api.request(
+        '/conversations/' + encodeURIComponent(openRefId) +
+          '/messages/' + encodeURIComponent(messageRefId) + '/notes',
+        { method: 'GET' },
+      );
+      const notes = result.data;
+
+      parts.title.textContent = 'What it knew by this message';
+      parts.hint.className = 'hint ' + (notes.summarisedHere ? 'prompt-exact' : 'prompt-drifted');
+      parts.hint.textContent = notes.summarisedHere
+        ? 'Written with this message, ' + when(notes.writtenAt) + '.'
+        : 'Nothing has summarised this message yet — these notes were written ' +
+          when(notes.writtenAt) + ', before it.';
+      parts.body.textContent = notes.notes;
+    } catch (error) {
+      parts.title.textContent = 'No notes for this message';
+      parts.hint.className = 'hint prompt-drifted';
+      parts.hint.textContent =
+        (error && error.message) || 'The notes could not be read back.';
     }
   }
 
@@ -2186,6 +2316,13 @@
       replyKey = null;
       show(threadMessage, 'ok', 'Queued for delivery.');
       await openThread(openRefId);
+      /*
+       * ALWAYS, after sending. The redraw only sticks to the bottom when
+       * somebody was already there, which is right for a colleague's update
+       * arriving while you read history — and wrong for your own message,
+       * which you have just written and would otherwise not see.
+       */
+      messages.scrollTop = messages.scrollHeight;
     } catch (error) {
       // The window can close between opening the thread and pressing send, so
       // this is a normal outcome rather than a fault: explain it and keep what
@@ -2279,9 +2416,28 @@
     }
   }
 
+  /*
+   * WHETHER THIS IS LIVE, said out loud.
+   *
+   * The stream is an optimisation with a poll underneath it, which is the
+   * right design and makes failure invisible: updates still arrive, just up
+   * to thirty seconds late, and "is it live or is it polling?" becomes a
+   * question nobody can answer by looking. One word in the header answers
+   * it — for whoever is using the inbox, and for whoever is debugging it.
+   */
+  function liveState(state, detail) {
+    const el = document.getElementById('liveState');
+    if (!el) return;
+    el.textContent = detail ? state + ' · ' + detail : state;
+    el.className = 'hint live-' + state.replace(/[^a-z]/g, '');
+  }
+
   async function openStream() {
     const session = window.api.readSession();
-    if (!session || !session.accessToken) return;
+    if (!session || !session.accessToken) {
+      liveState('polling', 'not signed in');
+      return;
+    }
 
     streamAbort = new AbortController();
     try {
@@ -2294,24 +2450,28 @@
       if (!response.ok || !response.body) throw new Error('stream rejected: ' + response.status);
 
       streamAttempt = 0;
+      liveState('live');
       await consume(response);
     } catch (error) {
       if (error && error.name === 'AbortError') return;
+      liveState('polling', (error && error.message) || 'stream failed');
     }
 
     // Ended or failed: back off and try again. The poll is still running, so
     // nothing is lost in the meantime.
     streamAttempt += 1;
     const delay = Math.min(STREAM_RETRY_BASE_MS * 2 ** (streamAttempt - 1), STREAM_RETRY_MAX_MS);
+    liveState('polling', 'retrying in ' + Math.round(delay / 1000) + 's');
     setTimeout(function () {
       if (!document.hidden) void openStream();
     }, delay);
   }
 
   function startLiveUpdates() {
+    liveState('connecting');
     // The floor: even with no stream at all, the list stays roughly current.
     pollTimer = setInterval(function () {
-      if (!document.hidden) load(true);
+      if (!document.hidden) void load(true);
     }, POLL_MS);
 
     void openStream();

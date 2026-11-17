@@ -42,6 +42,12 @@
           </label>
         </div>
         <div id="listMessage"></div>
+        <!--
+          Live or polling. The stream is an optimisation with a thirty second
+          poll underneath, so a broken stream looks exactly like a working one
+          that is quiet — updates still arrive, just late.
+        -->
+        <p class="hint"><span id="liveState">connecting</span></p>
       </div>
 
       <div class="panel">
