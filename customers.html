@@ -37,6 +37,28 @@
     </div>
   </main>
 
+  <!--
+    WHAT IS ACTUALLY HELD ABOUT ONE PERSON, over the list rather than
+    beside it. A row resolves a single name because a list needs one; this
+    is where somebody checks whether that name was typed by a colleague,
+    copied off Instagram, or recorded by the assistant from something the
+    customer said — and whether anybody ever verified the number under it.
+  -->
+  <dialog id="customerDialog" class="prompt-dialog">
+    <form method="dialog" class="prompt-dialog-head">
+      <div>
+        <h3 id="customerTitle"></h3>
+        <div class="hint">everything this business holds, and where each part came from</div>
+      </div>
+      <div class="prompt-dialog-actions">
+        <button class="secondary" value="close">Close</button>
+      </div>
+    </form>
+    <div class="prompt-view">
+      <div id="customerBody"></div>
+    </div>
+  </dialog>
+
   <script src="config.js"></script>
   <script src="assets/api.js"></script>
   <script src="assets/customers.js"></script>

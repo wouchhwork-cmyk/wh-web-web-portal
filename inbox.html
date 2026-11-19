@@ -64,6 +64,18 @@
         <p class="hint" id="threadMeta"></p>
 
         <!--
+          Whether somebody is waiting for a person, and whether the assistant
+          has been told to be quiet with them.
+
+          HERE AS WELL AS ON THE CUSTOMER RECORD, because this is where the
+          decision is actually made: an agent reading a conversation is the
+          one who knows it needs a human, or who is about to start typing and
+          wants the assistant to stop answering over them. Making them leave
+          the thread to say so is how neither gets used.
+        -->
+        <div id="assistantState" class="assistant-state" hidden></div>
+
+        <!--
           Handing a conversation over and closing it. Both endpoints existed from
           the start and nothing here called them, so every conversation stayed
           open and unassigned forever and the "assigned to me" filter was always
@@ -122,41 +134,6 @@
         <div id="threadMessage"></div>
       </div>
 
-      <!--
-        WHAT WE ASKED A MODEL, AND WHAT WE ASKED IT WITH.
-
-        The prompt itself is never stored: it carries the customer's own
-        words, their name and the transcript of anything they recorded, and
-        keeping it would make a second copy of every conversation. It is
-        rebuilt here on demand from the code, the saved instruction, the rows
-        it was assembled from and the ids of the messages it was shown — then
-        read and thrown away.
-      -->
-
-        <!--
-          A DIAGNOSTIC, so it is folded away. It answers "what was this model
-          shown", which matters on the day it matters and competes with the
-          conversation on every other day. The quicker route is on the
-          message itself.
-        -->
-        <details class="panel" id="aiCallsPanel">
-          <summary><strong>What the assistant was asked</strong></summary>
-          <h2>What the assistant was asked</h2>
-          <p class="hint">
-            Every call this business has made to a model &mdash; replies sent automatically, drafts
-            somebody asked for, and media descriptions. <strong>No prompt is stored.</strong> Opening
-            one rebuilds it and checks it against a fingerprint taken at the time, so it will tell you
-            whether what you are reading is exactly what ran.
-            <br />
-            For a single reply there is a quicker way: <em>why did it say this?</em> sits on the
-            message itself, in the thread above.
-          </p>
-          <div class="actions">
-            <button id="loadAiCalls" class="secondary">Load recent calls</button>
-            <span id="aiCallsNote" class="hint"></span>
-          </div>
-          <div id="aiCallsList"></div>
-        </details>
       </section>
     </div>
   </main>

@@ -22,6 +22,7 @@
   const threadPanel = document.getElementById('threadPanel');
   const threadTitle = document.getElementById('threadTitle');
   const threadMeta = document.getElementById('threadMeta');
+  const assistantState = document.getElementById('assistantState');
   const messages = document.getElementById('messages');
   const threadMessage = document.getElementById('threadMessage');
   const replyBox = document.getElementById('replyBox');
@@ -1214,6 +1215,29 @@
           showPrompt({ refId: message.promptRef });
         });
         note.appendChild(why);
+
+        /*
+         * THE EXCHANGE ITSELF, which the rebuilt prompt is not.
+         *
+         * "why did it say this?" shows what we WOULD send if we built it
+         * again now. This shows what actually went out and what actually
+         * came back — and, since tools arrived, every round of it: a single
+         * reply can be four calls, and the message row keeps only the last
+         * one's ref, so asking by message is the only way to see the whole
+         * thing rather than its final step.
+         *
+         * Only where the environment was told to keep them. Elsewhere the
+         * dialog says so rather than pretending the call is missing.
+         */
+        const exchange = document.createElement('button');
+        exchange.type = 'button';
+        exchange.className = 'linklike';
+        exchange.style.marginLeft = '6px';
+        exchange.textContent = 'see the exchange';
+        exchange.addEventListener('click', function () {
+          showExchange(message.promptRef);
+        });
+        note.appendChild(exchange);
       }
     }
 
@@ -1750,6 +1774,145 @@
     }
   }
 
+  /**
+   * The two switches, in the thread where the decision is actually made.
+   *
+   * SCOPED TO THIS INBOX. A flag raised here is about this connected
+   * account: pausing while you type to somebody on one account leaves the
+   * assistant answering them everywhere else they write. A direct message
+   * and a comment on the same account share one flag, because they are the
+   * same inbox.
+   *
+   * NOTHING AT ALL WHEN THERE IS NO CUSTOMER. A comment thread always has an
+   * author, but a conversation can exist before one is resolved, and an
+   * empty bar of controls that do nothing is worse than no bar.
+   */
+  function drawAssistantState(person) {
+    const state = person && person.assistant;
+    if (!person || !person.refId || !state) {
+      assistantState.hidden = true;
+      assistantState.textContent = '';
+      return;
+    }
+
+    assistantState.hidden = false;
+    assistantState.textContent = '';
+
+    const message = document.createElement('span');
+    message.className = 'hint';
+
+    /* --- needs a person ------------------------------------------------ */
+    if (state.needsHuman) {
+      assistantState.appendChild(pill('needs a person', 'warning'));
+
+      if (state.needsHumanReason) {
+        const why = document.createElement('span');
+        why.className = 'hint';
+        why.style.marginLeft = '6px';
+        /* The assistant's own words for what it could not do. */
+        why.textContent = state.needsHumanReason;
+        assistantState.appendChild(why);
+      }
+
+      assistantState.appendChild(
+        action('mark as handled', function () {
+          void switchFor(person, '/needs-human', { needsHuman: false }, message);
+        }),
+      );
+    } else {
+      assistantState.appendChild(
+        action('flag for a person', function () {
+          const reason = window.prompt('Why does this need a person?');
+          if (reason === null || reason.trim() === '') return;
+          void switchFor(person, '/needs-human', { needsHuman: true, reason: reason.trim() }, message);
+        }),
+      );
+    }
+
+    /* --- the assistant's voice ------------------------------------------ */
+    if (state.paused) {
+      assistantState.appendChild(pill('assistant paused', 'none'));
+
+      const until = document.createElement('span');
+      until.className = 'hint';
+      until.style.marginLeft = '6px';
+      until.textContent = state.resumesAt
+        ? 'back on at ' + when(state.resumesAt)
+        : 'until you resume it';
+      assistantState.appendChild(until);
+
+      assistantState.appendChild(
+        action('resume now', function () {
+          void switchFor(person, '/automation-pause', { paused: false }, message);
+        }),
+      );
+    } else {
+      /*
+       * AN HOUR AND INDEFINITELY. An hour is the ordinary case — somebody
+       * picking this up to type for a few minutes — and it comes back by
+       * itself, which is what stops a pause being forgotten.
+       */
+      assistantState.appendChild(
+        action('pause assistant 1h', function () {
+          void switchFor(
+            person,
+            '/automation-pause',
+            { paused: true, resumesAt: new Date(Date.now() + 3600000).toISOString() },
+            message,
+          );
+        }),
+      );
+      assistantState.appendChild(
+        action('pause until I resume', function () {
+          void switchFor(person, '/automation-pause', { paused: true }, message);
+        }),
+      );
+    }
+
+    assistantState.appendChild(message);
+  }
+
+  /** A link-styled button, which is every control on this bar. */
+  function action(label, onClick) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'linklike';
+    button.style.marginLeft = '8px';
+    button.textContent = label;
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  /**
+   * One write, then the thread is re-read.
+   *
+   * RE-READ RATHER THAN TOGGLED IN PLACE: the server decides what "paused"
+   * means — a resume time already past is not paused — and a bar updated
+   * from what was clicked would eventually disagree with the thing that
+   * actually gates the assistant.
+   */
+  async function switchFor(person, path, body, message) {
+    if (!openRefId) return;
+    message.className = 'hint';
+    message.textContent = ' saving…';
+    try {
+      /*
+       * AGAINST THE CONVERSATION, not the customer. Both switches are per
+       * connected account, and the conversation is the thing that knows
+       * both halves — who the person is and which inbox this is. Asking a
+       * client for a channel id would mean publishing one.
+       */
+      await window.api.request('/conversations/' + encodeURIComponent(openRefId) + path, {
+        method: 'POST',
+        body: body,
+      });
+      await openThread(openRefId);
+    } catch (error) {
+      message.className = 'hint prompt-drifted';
+      message.textContent = ' ' + ((error && error.message) || 'that could not be saved');
+    }
+  }
+
   async function openThread(refId, appendOlder) {
     const older = Boolean(appendOlder);
     openRefId = refId;
@@ -1796,6 +1959,9 @@
       openCanModerate =
         conversation.canModerateComments === true &&
         permissions.indexOf('conversations.manage') !== -1;
+
+      /* Who is waiting, and whether the assistant has been told to be quiet. */
+      drawAssistantState(person);
 
       /*
        * Taken before anything is cleared: a thread already at its newest
@@ -2074,122 +2240,6 @@
     }
   }
 
-  /**
-   * What this business has asked a model, newest first.
-   *
-   * Metadata only — what it cost, how long it took, whether it failed. The
-   * prompt is not in this list because it is not in the database: it is
-   * rebuilt one at a time, on request, by `showPrompt` below.
-   */
-  async function loadAiCalls() {
-    const button = document.getElementById('loadAiCalls');
-    const note = document.getElementById('aiCallsNote');
-    const list = document.getElementById('aiCallsList');
-
-    button.disabled = true;
-    note.textContent = 'reading the trail…';
-    try {
-      const result = await window.api.request('/ai-calls?limit=25', { method: 'GET' });
-      const calls = result.data.calls || [];
-      list.innerHTML = '';
-
-      if (!calls.length) {
-        note.textContent = 'Nothing yet. A call appears here the moment the assistant makes one.';
-        return;
-      }
-
-      /*
-       * A TABLE, because this is tabular — and the house one, not a bespoke
-       * copy. The first version was a column of flex rows separated by
-       * middots with its own inline styling, which both ran together and
-       * disagreed with every other table in the portal.
-       */
-      const table = document.createElement('table');
-      const thead = document.createElement('thead');
-      const headRow = document.createElement('tr');
-      [
-        ['When', ''],
-        ['What for', ''],
-        ['Model', ''],
-        ['Outcome', ''],
-        ['Tokens', 'num'],
-        ['Took', 'num'],
-        ['Shown', 'num'],
-        ['', ''],
-      ].forEach(function (column) {
-        const th = document.createElement('th');
-        th.textContent = column[0];
-        if (column[1]) th.className = column[1];
-        headRow.appendChild(th);
-      });
-      thead.appendChild(headRow);
-      table.appendChild(thead);
-
-      const tbody = document.createElement('tbody');
-      calls.forEach(function (call) {
-        const row = document.createElement('tr');
-
-        const cell = function (text, className) {
-          const td = document.createElement('td');
-          td.textContent = text;
-          if (className) td.className = className;
-          row.appendChild(td);
-          return td;
-        };
-
-        cell(when(call.createdAt));
-        cell(PURPOSES[call.purpose] || call.purpose);
-        cell(call.model);
-
-        /* A failure that renders in the same ink as a success is a failure
-         * nobody finds, and these are the rows people come here for. */
-        const outcome = cell(OUTCOMES[call.status] || call.failureCode || call.status);
-        if (call.status !== 'ok') outcome.className = 'outcome-bad';
-
-        cell(call.totalTokens ? String(call.totalTokens) : '—', 'num');
-        cell(call.durationMs ? call.durationMs + ' ms' : '—', 'num');
-        cell(call.messages ? String(call.messages) : call.mediaKey ? 'media' : '—', 'num');
-
-        const action = document.createElement('td');
-        action.className = 'num';
-        const open = document.createElement('button');
-        open.className = 'secondary';
-        open.textContent = 'Show the prompt';
-        /*
-         * A call made before prompts were fingerprinted cannot be checked,
-         * so it is not offered: showing a reconstruction nobody can verify
-         * is worse than showing nothing.
-         */
-        open.disabled = !call.replayable;
-        open.title = call.replayable ? '' : 'Made before prompts were fingerprinted';
-        open.addEventListener('click', function () {
-          showPrompt(call);
-        });
-        action.appendChild(open);
-        row.appendChild(action);
-
-        tbody.appendChild(row);
-      });
-      table.appendChild(tbody);
-      list.appendChild(table);
-
-      note.textContent = calls.length + ' call' + (calls.length === 1 ? '' : 's');
-    } catch (error) {
-      note.textContent = '';
-      handle(error, document.getElementById('aiCallsNote'));
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  /* Each status in the words somebody reading a trail would use. */
-  const OUTCOMES = {
-    ok: 'answered',
-    in_flight: 'in flight',
-    unknown: 'never came back',
-    failed: 'failed',
-  };
-
   const PURPOSES = {
     auto_reply: 'replied automatically',
     draft: 'drafted for a colleague',
@@ -2259,6 +2309,141 @@
       drift.textContent =
         (error && error.message) || 'The call could not be read back.';
     }
+  }
+
+  /**
+   * Every exchange with the model behind one reply, verbatim.
+   *
+   * THE DIFFERENCE FROM showPrompt IS THE WHOLE POINT. That one rebuilds a
+   * prompt from today's code and tells you whether it still matches. This
+   * one is the bodies themselves — what was sent, what came back, and the
+   * model's own answer before anything parsed it.
+   *
+   * ROUND BY ROUND, because a reply that used a tool is several calls. Round
+   * 0 is the opening ask; each one after it carries the results of the tools
+   * the model asked for in the round before.
+   */
+  async function showExchange(callRefId) {
+    const parts = openTextDialog('Reading the exchange…');
+
+    try {
+      const result = await window.api.request(
+        '/ai-calls/' + encodeURIComponent(callRefId) + '/exchange',
+        { method: 'GET' },
+      );
+      const wire = result.data;
+
+      /*
+       * THE BODY ALWAYS SAYS SOMETHING. These two branches used to set the
+       * title and the hint and leave the body empty, which reads as a dialog
+       * that failed to load — a heading, a blank space and two buttons — when
+       * in fact it had a perfectly good answer to give.
+       */
+      if (!wire.captured) {
+        parts.title.textContent = 'The exchange was not kept';
+        parts.hint.className = 'hint prompt-drifted';
+        parts.hint.textContent = 'Nothing is wrong — this environment does not keep them.';
+        parts.body.textContent =
+          'The bodies of a model call are only kept where AI_WIRE_CAPTURE_ENABLED is on, ' +
+          'and it is off here. They are whole customer conversations in plain text, so it ' +
+          'is off by default and refused outright in production.\n\n' +
+          '"why did it say this?" still works: it rebuilds the prompt from the code and ' +
+          'checks it against a fingerprint taken at the time.';
+        return;
+      }
+      if (!wire.rounds.length) {
+        parts.title.textContent = 'Nothing kept for this reply';
+        parts.hint.className = 'hint prompt-drifted';
+        parts.hint.textContent = 'Capture is on, but there is nothing on file for this one.';
+        parts.body.textContent =
+          'This reply was written before capture was switched on, or by a call that was ' +
+          'never recorded.\n\nReplies sent from here on will have their exchange kept. ' +
+          'For an older one, "why did it say this?" rebuilds the prompt instead.';
+        return;
+      }
+
+      parts.title.textContent =
+        wire.rounds.length === 1
+          ? 'One exchange with ' + wire.rounds[0].model
+          : wire.rounds.length + ' exchanges with ' + wire.rounds[0].model;
+      parts.hint.className = 'hint prompt-exact';
+      parts.hint.textContent =
+        'Exactly what crossed the wire. ' +
+        (wire.rounds.length > 1
+          ? 'Round 0 is the opening ask; each one after it carries the tool results.'
+          : 'No tool was used on this reply.');
+
+      parts.body.textContent = wire.rounds.map(roundText).join('\n\n');
+    } catch (error) {
+      parts.title.textContent = 'Could not read the exchange';
+      parts.hint.className = 'hint prompt-drifted';
+      parts.hint.textContent =
+        (error && error.message) || 'The bodies could not be read back.';
+    }
+  }
+
+  /**
+   * One round as text, because the container is already a <pre>.
+   *
+   * BUILT AS A STRING rather than as elements, the same way the rebuilt
+   * prompt is. The thing somebody opened this to read is a prompt and an
+   * answer — both of which are text with meaningful newlines — so anything
+   * that puts them through markup is working against the content.
+   */
+  function roundText(round) {
+    const rule = '='.repeat(60);
+    return (
+      rule +
+      '\nROUND ' + round.round +
+      ' · ' + round.provider + ' · ' + round.model +
+      ' · ' + round.durationMs + 'ms' +
+      '\n' + rule +
+      '\n\n--- SENT ---------------------------------------------------\n' +
+      readableRequest(round.request) +
+      '\n\n--- CAME BACK ----------------------------------------------\n' +
+      JSON.stringify(round.response, null, 2) +
+      '\n\n--- READ AS ------------------------------------------------\n' +
+      JSON.stringify(round.parsed, null, 2)
+    );
+  }
+
+  /**
+   * A request body with its prompt readable rather than escaped.
+   *
+   * Both providers carry the text in `input`, as a list of either strings or
+   * objects with a text field, and OpenAI puts the standing instruction in
+   * `instructions`. Anything this does not recognise falls back to JSON, so
+   * a provider shape changing makes the view plainer, never empty.
+   */
+  function readableRequest(request) {
+    if (!request || typeof request !== 'object') return JSON.stringify(request, null, 2);
+
+    const head = {};
+    Object.keys(request).forEach(function (key) {
+      if (key !== 'input' && key !== 'instructions') head[key] = request[key];
+    });
+
+    let out = JSON.stringify(head, null, 2);
+    if (typeof request.instructions === 'string') {
+      out += '\n\ninstructions:\n' + request.instructions;
+    }
+    if (Array.isArray(request.input)) {
+      request.input.forEach(function (part, index) {
+        const text =
+          typeof part === 'string'
+            ? part
+            : part && typeof part.text === 'string'
+              ? part.text
+              : part && typeof part.content === 'string'
+                ? part.content
+                : JSON.stringify(part, null, 2);
+        const role = part && part.role ? ' (' + part.role + ')' : '';
+        out += '\n\ninput[' + index + ']' + role + ':\n' + text;
+      });
+    } else if (request.input !== undefined) {
+      out += '\n\ninput:\n' + JSON.stringify(request.input, null, 2);
+    }
+    return out;
   }
 
   /**
@@ -2542,7 +2727,6 @@
     loadMore.addEventListener('click', function () { load(false); });
     document.getElementById('sendReply').addEventListener('click', sendReply);
     document.getElementById('draftReply').addEventListener('click', draftReply);
-    document.getElementById('loadAiCalls').addEventListener('click', loadAiCalls);
 
     /*
      * A prompt runs to thousands of characters and the reason to open one is

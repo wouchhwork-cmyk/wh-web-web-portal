@@ -526,6 +526,38 @@ tbody tr:hover { background: #fafbfc; }
   line-height: 1.55;
   background: var(--panel);
 }
+/* --- one customer's record, fact by fact ----------------------------- */
+
+.detail-section { margin-top: 16px; }
+.detail-section:first-child { margin-top: 4px; }
+.detail-section h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/*
+ * Label and value on one line, with the label a fixed column so the values
+ * line up — a record somebody is CHECKING is read down the right-hand side,
+ * and ragged values make that a search rather than a scan.
+ */
+.detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.detail-row:last-child { border-bottom: 0; }
+.detail-label {
+  flex: 0 0 180px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .prompt-exact { color: var(--ok); }
 .prompt-drifted { color: var(--warn); }
 
@@ -671,6 +703,19 @@ details.panel[open] > summary::before { content: '\25BE  '; }
 
 /* --- the prompt, over the conversation it belongs to ------------------ */
 
+/*
+ * A COLUMN SO THE BODY CAN SCROLL. The dialog stops at 86vh and clips what
+ * it cannot show, and for a long time only the prompt view scrolled —
+ * because its content is a <pre> with its own max-height. A customer record
+ * is ordinary elements, so a record with enough contacts and identifiers on
+ * it simply ran off the bottom with no way to reach the rest.
+ *
+ * The head stays put (it holds the close button, which must not scroll out
+ * of reach) and the body below it takes the remaining space and scrolls.
+ * `min-height: 0` is the part that makes it work: a flex child defaults to
+ * min-content, so without it the body refuses to shrink and overflows the
+ * dialog exactly as before.
+ */
 .prompt-dialog {
   width: min(900px, 92vw);
   max-height: 86vh;
@@ -680,6 +725,22 @@ details.panel[open] > summary::before { content: '\25BE  '; }
   background: var(--panel);
   color: var(--ink);
   overflow: hidden;
+}
+/*
+ * [open] IS LOAD-BEARING. A closed <dialog> is hidden by the browser's own
+ * `display: none`, and setting `display: flex` on the element unconditionally
+ * overrides it — which renders both dialogs inline on the page as an empty
+ * box with a Copy and a Close button in it. Caught the moment this shipped.
+ */
+.prompt-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.prompt-dialog > .prompt-dialog-head { flex: 0 0 auto; }
+.prompt-dialog > .prompt-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .prompt-dialog::backdrop { background: rgba(17, 24, 39, 0.45); }
 
@@ -708,3 +769,22 @@ details.panel[open] > summary::before { content: '\25BE  '; }
 .live-live::before { content: '● '; color: var(--ok); }
 .live-connecting::before { content: '● '; color: var(--muted); }
 .live-polling::before { content: '● '; color: var(--warn); }
+
+/* --- who is waiting, and whether the assistant is talking -------------- */
+
+/*
+ * A row of state and the controls that change it, directly under the thread
+ * heading. Wraps rather than scrolls: the labels are words, not columns, and
+ * a control pushed off the edge is a control nobody uses.
+ */
+.assistant-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 6px 0 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-muted, transparent);
+}

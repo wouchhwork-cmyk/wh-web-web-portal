@@ -55,6 +55,39 @@
     if (!selected && emptyLabel) select.value = '';
   }
 
+  /**
+   * The country picker, which is stored by code and scanned by name.
+   *
+   * ITS OWN FUNCTION because the values are objects rather than strings:
+   * "IN" is what the API wants and "India" is what somebody looks for, and
+   * a list showing the first is a list nobody can use.
+   *
+   * NO EMPTY OPTION. Unlike the timezone and the currency, there is no
+   * sensible absent country — without one, every bare phone number a
+   * customer types has to be refused — so the control always carries an
+   * answer rather than offering "Not set" as a way out.
+   */
+  function fillCountries(select, countries, selected) {
+    select.innerHTML = '';
+    countries.forEach(function (country) {
+      const option = document.createElement('option');
+      option.value = country.code;
+      option.textContent = country.name + ' (' + country.code + ')';
+      if (country.code === selected) option.selected = true;
+      select.appendChild(option);
+    });
+    /* A business whose stored country is not in the list — a retired code,
+     * say — keeps it rather than being silently moved to whatever sorts
+     * first. Losing it here would change what its phone numbers mean. */
+    if (selected && select.value !== selected) {
+      const kept = document.createElement('option');
+      kept.value = selected;
+      kept.textContent = selected;
+      kept.selected = true;
+      select.insertBefore(kept, select.firstChild);
+    }
+  }
+
 
   /* ---------------------------------------------------------------- *
    * The public profile: what customers see.
@@ -301,6 +334,12 @@
        * row would read as a loading bug; "Not set" is a choice somebody made.
        */
       fill(el('currencyCode'), options.data.currencies, business.currencyCode, 'Not set');
+      /*
+       * NO "NOT SET" HERE, unlike the two above. There is no sensible absent
+       * country: without one every bare phone number a customer types has to
+       * be refused, so the field always carries the business's own answer.
+       */
+      fillCountries(el('country'), options.data.countries || [], business.country);
 
       /*
        * The suggested names, from the server, for the same reason the
@@ -339,6 +378,7 @@
       el('save').hidden = !mayManage;
       el('timezone').disabled = !mayManage;
       el('currencyCode').disabled = !mayManage;
+      el('country').disabled = !mayManage;
 
       el('addLink').hidden = !mayManage;
       el('addContact').hidden = !mayManage;
@@ -397,6 +437,9 @@
           timezone: el('timezone').value || null,
           /* Empty means "not set", which is null on the wire — not "". */
           currencyCode: el('currencyCode').value || null,
+          /* Omitted rather than sent empty: the API reads absence as "not
+           * changing it", and an empty string would be a validation error. */
+          ...(el('country').value ? { country: el('country').value } : {}),
           displayName: el('displayName').value.trim() || null,
           about: el('about').value.trim() || null,
           autoReply: el('autoReply').checked,
